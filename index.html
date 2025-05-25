@@ -4,213 +4,84 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exploring MycoFi</title>
-    <!-- PDF.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <!-- Turn.js for page flipping -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/0.4.1/turn.min.js"></script>
     <style>
         body {
             margin: 0;
-            padding: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
             font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow: hidden;
         }
-
-        .container {
+        
+        .header {
+            padding: 20px;
+            background-color: #333;
+            color: white;
             text-align: center;
+        }
+        
+        .zine-container {
             padding: 20px;
         }
-
-        h1 {
-            color: white;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        
+        .zine-embed {
+            position: relative;
+            padding-top: max(60%, 324px);
+            width: 100%;
+            height: 0;
         }
-
-        #flipbook {
-            width: 800px;
-            height: 600px;
-            margin: 0 auto;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-
-        .page {
-            width: 400px;
-            height: 600px;
-            background: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #ddd;
-        }
-
-        .page canvas {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-        }
-
-        .controls {
-            margin-top: 20px;
-        }
-
-        .btn {
-            background: rgba(255,255,255,0.9);
+        
+        .zine-embed iframe {
+            position: absolute;
             border: none;
-            padding: 12px 24px;
-            margin: 0 10px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.3s ease;
+            width: 100%;
+            height: 100%;
+            left: 0;
+            top: 0;
         }
-
-        .btn:hover {
-            background: white;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-
-        .loading {
-            color: white;
-            font-size: 18px;
-        }
-
+        
         @media (max-width: 768px) {
-            #flipbook {
-                width: 90vw;
-                height: calc(90vw * 0.75);
+            body {
+                padding: 10px;
             }
-            .page {
-                width: 45vw;
-                height: calc(90vw * 0.75);
+            
+            .header {
+                padding: 15px;
             }
-            h1 {
-                font-size: 1.8em;
+            
+            .zine-container {
+                padding: 15px;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Exploring MycoFi: Mycelial Design Patterns for Web3 & Beyond</h1>
-        
-        <div id="loading" class="loading">Loading your book...</div>
-        
-        <div id="flipbook" style="display: none;">
-            <!-- Pages will be dynamically generated here -->
+        <div class="header">
+            <h1>Exploring MycoFi</h1>
+            <p>Mycelial Design Patterns for Web3 & Beyond</p>
         </div>
-
-        <div class="controls" style="display: none;" id="controls">
-            <button class="btn" onclick="previousPage()">← Previous</button>
-            <span id="pageInfo" style="color: white; margin: 0 20px;">Page 1</span>
-            <button class="btn" onclick="nextPage()">Next →</button>
+        
+        <div class="zine-container">
+            <div class="zine-embed">
+                <iframe 
+                    src="https://online.fliphtml5.com/phqos/acdx/" 
+                    seamless="seamless" 
+                    scrolling="no" 
+                    frameborder="0" 
+                    allowtransparency="true" 
+                    allowfullscreen="true">
+                </iframe>
+            </div>
         </div>
     </div>
-
-    <script>
-        // Set PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        
-        let pdfDoc = null;
-        let totalPages = 0;
-        let currentPage = 1;
-
-        // Load and render PDF
-        async function loadPDF() {
-            try {
-                const loadingTask = pdfjsLib.getDocument('./ExploringMycoFiBook.pdf');
-                pdfDoc = await loadingTask.promise;
-                totalPages = pdfDoc.numPages;
-                
-                await renderAllPages();
-                initializeFlipbook();
-                
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('flipbook').style.display = 'block';
-                document.getElementById('controls').style.display = 'block';
-                
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                document.getElementById('loading').innerHTML = 'Could not load PDF. Please make sure "mycofi-zine.pdf" is uploaded to your repository.';
-            }
-        }
-
-        async function renderAllPages() {
-            const flipbook = document.getElementById('flipbook');
-            
-            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-                const page = await pdfDoc.getPage(pageNum);
-                const scale = 1.5;
-                const viewport = page.getViewport({ scale: scale });
-                
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                
-                const renderContext = {
-                    canvasContext: context,
-                    viewport: viewport
-                };
-                
-                await page.render(renderContext).promise;
-                
-                const pageDiv = document.createElement('div');
-                pageDiv.className = 'page';
-                pageDiv.appendChild(canvas);
-                flipbook.appendChild(pageDiv);
-            }
-        }
-
-        function initializeFlipbook() {
-            $("#flipbook").turn({
-                width: 800,
-                height: 600,
-                autoCenter: true,
-                elevation: 50,
-                gradients: true,
-                when: {
-                    turned: function(event, page, view) {
-                        currentPage = page;
-                        updatePageInfo();
-                    }
-                }
-            });
-            updatePageInfo();
-        }
-
-        function updatePageInfo() {
-            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
-        }
-
-        function nextPage() {
-            $("#flipbook").turn("next");
-        }
-
-        function previousPage() {
-            $("#flipbook").turn("previous");
-        }
-
-        // Keyboard navigation
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'ArrowRight' || e.key === ' ') {
-                e.preventDefault();
-                nextPage();
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                previousPage();
-            }
-        });
-
-        // Load PDF when page loads
-        loadPDF();
-    </script>
 </body>
 </html>

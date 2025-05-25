@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exploring MycoFi</title>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- jQuery (required for Turn.js) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Turn.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/0.4.1/turn.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            padding: 10px;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .container.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        h1 {
+            color: white;
+            margin: 10px 0;
+            font-size: clamp(1.2em, 3vw, 2em);
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            flex-shrink: 0;
+        }
+
+        .flipbook-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 0;
+        }
+
+        #flipbook {
+            width: min(85vw, 900px);
+            height: min(65vh, 600px);
+            margin: 0 auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .container.fullscreen #flipbook {
+            width: min(95vw, 1400px);
+            height: min(85vh, 900px);
+        }
+
+        /* Turn.js specific styles */
+        #flipbook .page {
+            width: calc(min(85vw, 900px) / 2) !important;
+            height: min(65vh, 600px) !important;
+            background: white;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+            position: absolute;
+        }
+
+        .container.fullscreen #flipbook .page {
+            width: calc(min(95vw, 1400px) / 2) !important;
+            height: min(85vh, 900px) !important;
+        }
+
+        #flipbook .page canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+            display: block;
+            margin: 0;
+            padding: 0;
+        }
+
+        .loading-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #666;
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls {
+            margin: 15px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.9);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .fullscreen-btn {
+            background: rgba(255,255,255,0.9);
+            border: none;
+            padding: 12px 16px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .fullscreen-btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        #pageInfo {
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.2em;
+                margin: 5px 0;
+            }
+            
+            .controls {
+                margin: 10px 0;
+                gap: 10px;
+            }
+            
+            .btn {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+            
+            .fullscreen-btn {
+                width: 40px;
+                height: 40px;
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="container">
+        <h1>Exploring MycoFi: Mycelial Design Patterns for Web3 & Beyond</h1>
+        
+        <div class="flipbook-container">
+            <div id="flipbook">
+                <!-- Pages will be dynamically generated here -->
+            </div>
+        </div>
+
+        <div class="controls" id="controls">
+            <button class="btn" id="prevBtn" onclick="previousPage()">← Previous</button>
+            <span id="pageInfo">Loading...</span>
+            <button class="btn" id="nextBtn" onclick="nextPage()">Next →</button>
+            <button class="fullscreen-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle Fullscreen">⛶</button>
+        </div>
+    </div>
+
+    <script>
+        // Set PDF.js worker with correct URL
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        let flipbookInitialized = false;
+        let isFullscreen = false;
+        let pdfAspectRatio = null; // Store the PDF's aspect ratio
+
+        async function loadPDF() {
+            try {
+                console.log('Starting PDF load...');
+                document.getElementById('pageInfo').textContent = 'Loading PDF...';
+                
+                const loadingTask = pdfjsLib.getDocument('./ExploringMycoFiBook.pdf');
+                pdfDoc = await loadingTask.promise;
+                totalPages = pdfDoc.numPages;
+                console.log('PDF loaded successfully, total pages:', totalPages);
+                
+                // Get the first page to determine aspect ratio
+                const firstPage = await pdfDoc.getPage(1);
+                const viewport = firstPage.getViewport({ scale: 1 });
+                pdfAspectRatio = viewport.width / viewport.height;
+                console.log('PDF aspect ratio:', pdfAspectRatio);
+                
+                await createFlipbook();
+                
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                document.getElementById('flipbook').innerHTML = '<div class="page"><div style="color: red; padding: 20px;">Error loading PDF: ' + error.message + '<br>Make sure ExploringMycoFiBook.pdf is in the same folder.</div></div>';
+                document.getElementById('pageInfo').textContent = 'Error loading PDF';
+            }
+        }
+
+        async function createFlipbook() {
+            const flipbook = document.getElementById('flipbook');
+            flipbook.innerHTML = ''; // Clear existing content
+            
+            console.log('Creating flipbook pages...');
+            
+            // Create all page divs first - Turn.js needs them all present
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page';
+                pageDiv.innerHTML = '<div class="loading-page">Loading page ' + pageNum + '...</div>';
+                flipbook.appendChild(pageDiv);
+            }
+            
+            console.log('All page divs created, initializing Turn.js...');
+            
+            // Wait for DOM to be ready, then initialize Turn.js
+            setTimeout(() => {
+                initializeFlipbook();
+                
+                // After Turn.js is initialized, render the pages
+                setTimeout(() => {
+                    renderAllPages();
+                }, 200);
+            }, 100);
+        }
+
+        async function renderAllPages() {
+            console.log('Starting to render all pages...');
+            const pages = document.querySelectorAll('#flipbook .page');
+            
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                await renderPageToDiv(pageNum, pages[pageNum - 1]);
+                document.getElementById('pageInfo').textContent = `Loading pages... ${pageNum}/${totalPages}`;
+            }
+            
+            updatePageInfo();
+            updateButtons();
+            console.log('All pages rendered successfully');
+        }
+
+        async function renderPageToDiv(pageNumber, pageDiv) {
+            try {
+                console.log('Rendering page:', pageNumber);
+                const page = await pdfDoc.getPage(pageNumber);
+                
+                if (!pageDiv) {
+                    console.error('Page div not found for page:', pageNumber);
+                    return;
+                }
+                
+                // Get current container dimensions
+                const flipbookWidth = isFullscreen ? Math.min(window.innerWidth * 0.95, 1400) : Math.min(window.innerWidth * 0.85, 900);
+                const flipbookHeight = isFullscreen ? Math.min(window.innerHeight * 0.85, 900) : Math.min(window.innerHeight * 0.65, 600);
+                
+                const containerWidth = flipbookWidth / 2;
+                const containerHeight = flipbookHeight;
+                
+                const viewport = page.getViewport({ scale: 1 });
+                
+                // Calculate scale to fit within container while preserving aspect ratio
+                const scaleX = containerWidth / viewport.width;
+                const scaleY = containerHeight / viewport.height;
+                const scale = Math.min(scaleX, scaleY); // Use min to preserve aspect ratio
+                
+                const scaledViewport = page.getViewport({ scale });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = scaledViewport.width;
+                canvas.height = scaledViewport.height;
+                
+                // Center the canvas within the container while preserving dimensions
+                canvas.style.width = scaledViewport.width + 'px';
+                canvas.style.height = scaledViewport.height + 'px';
+                canvas.style.display = 'block';
+                canvas.style.margin = 'auto';
+                canvas.style.maxWidth = '100%';
+                canvas.style.maxHeight = '100%';
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: scaledViewport
+                };
+
+                await page.render(renderContext).promise;
+                
+                // Replace loading content with rendered page
+                pageDiv.innerHTML = '';
+                pageDiv.style.display = 'flex';
+                pageDiv.style.alignItems = 'center';
+                pageDiv.style.justifyContent = 'center';
+                pageDiv.appendChild(canvas);
+                
+            } catch (error) {
+                console.error('Error rendering page:', pageNumber, error);
+                if (pageDiv) {
+                    pageDiv.innerHTML = '<div style="color: red; padding: 10px;">Error loading page ' + pageNumber + '</div>';
+                }
+            }
+        }
+
+        function calculateOptimalDimensions() {
+            // Calculate optimal flipbook dimensions based on viewport and PDF aspect ratio
+            const maxWidth = isFullscreen ? window.innerWidth * 0.95 : window.innerWidth * 0.85;
+            const maxHeight = isFullscreen ? window.innerHeight * 0.85 : window.innerHeight * 0.65;
+            
+            if (!pdfAspectRatio) {
+                // Fallback if aspect ratio not available
+                return {
+                    width: Math.min(maxWidth, 900),
+                    height: Math.min(maxHeight, 600)
+                };
+            }
+            
+            // Calculate dimensions for double-page spread
+            const doublePageAspectRatio = pdfAspectRatio * 2;
+            
+            // Try fitting by width first
+            let width = maxWidth;
+            let height = width / doublePageAspectRatio;
+            
+            // If height exceeds max, fit by height instead
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * doublePageAspectRatio;
+            }
+            
+            return { width, height };
+        }
+
+        function initializeFlipbook() {
+            try {
+                console.log('Initializing Turn.js flipbook...');
+                
+                // Make sure jQuery and Turn.js are loaded
+                if (typeof $ === 'undefined') {
+                    console.error('jQuery not loaded!');
+                    return;
+                }
+                
+                if (typeof $.fn.turn === 'undefined') {
+                    console.error('Turn.js not loaded!');
+                    return;
+                }
+                
+                // Destroy any existing flipbook first
+                if (flipbookInitialized) {
+                    $("#flipbook").turn("destroy");
+                }
+                
+                // Calculate optimal dimensions preserving aspect ratio
+                const dimensions = calculateOptimalDimensions();
+                
+                // Update CSS custom properties for dynamic sizing
+                const flipbook = document.getElementById('flipbook');
+                flipbook.style.width = dimensions.width + 'px';
+                flipbook.style.height = dimensions.height + 'px';
+                
+                // Update page dimensions
+                const pages = document.querySelectorAll('#flipbook .page');
+                pages.forEach(page => {
+                    page.style.width = (dimensions.width / 2) + 'px';
+                    page.style.height = dimensions.height + 'px';
+                });
+                
+                // Initialize Turn.js with calculated dimensions
+                $("#flipbook").turn({
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    autoCenter: true,
+                    elevation: 50,
+                    gradients: true,
+                    acceleration: true,
+                    display: 'double',
+                    page: currentPage,
+                    duration: 1000,
+                    when: {
+                        turned: function(event, page, view) {
+                            currentPage = page;
+                            updatePageInfo();
+                            updateButtons();
+                            console.log('Turned to page:', page, 'view:', view);
+                        }
+                    }
+                });
+                
+                flipbookInitialized = true;
+                console.log('Turn.js initialized successfully with dimensions:', dimensions);
+                
+            } catch (error) {
+                console.error('Error initializing flipbook:', error);
+            }
+        }
+
+        function toggleFullscreen() {
+            const container = document.getElementById('container');
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
+            
+            isFullscreen = !isFullscreen;
+            
+            if (isFullscreen) {
+                container.classList.add('fullscreen');
+                fullscreenBtn.innerHTML = '⛉';
+                fullscreenBtn.title = 'Exit Fullscreen';
+                document.body.style.overflow = 'hidden';
+            } else {
+                container.classList.remove('fullscreen');
+                fullscreenBtn.innerHTML = '⛶';
+                fullscreenBtn.title = 'Toggle Fullscreen';
+                document.body.style.overflow = 'hidden';
+            }
+            
+            // Reinitialize flipbook with new dimensions
+            if (flipbookInitialized) {
+                $("#flipbook").turn("destroy");
+                flipbookInitialized = false;
+                setTimeout(() => {
+                    initializeFlipbook();
+                    // Re-render all pages with new dimensions
+                    setTimeout(() => {
+                        renderAllPages();
+                    }, 200);
+                }, 100);
+            }
+        }
+
+        function updatePageInfo() {
+            // In double page mode, show the current spread
+            if (currentPage === 1) {
+                document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+            } else {
+                const leftPage = currentPage % 2 === 0 ? currentPage - 1 : currentPage;
+                const rightPage = leftPage + 1;
+                
+                if (rightPage <= totalPages) {
+                    document.getElementById('pageInfo').textContent = `Pages ${leftPage}-${rightPage} of ${totalPages}`;
+                } else {
+                    document.getElementById('pageInfo').textContent = `Page ${leftPage} of ${totalPages}`;
+                }
+            }
+        }
+
+        function updateButtons() {
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            
+            prevBtn.disabled = currentPage <= 1;
+            nextBtn.disabled = currentPage >= totalPages;
+        }
+
+        function nextPage() {
+            if (flipbookInitialized) {
+                $("#flipbook").turn("next");
+            }
+        }
+
+        function previousPage() {
+            if (flipbookInitialized) {
+                $("#flipbook").turn("previous");
+            }
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && isFullscreen) {
+                toggleFullscreen();
+            } else if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                nextPage();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                previousPage();
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                toggleFullscreen();
+            }
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (flipbookInitialized) {
+                setTimeout(() => {
+                    $("#flipbook").turn("destroy");
+                    flipbookInitialized = false;
+                    initializeFlipbook();
+                    renderAllPages();
+                }, 100);
+            }
+        });
+
+        // Load PDF when page loads
+        window.addEventListener('load', function() {
+            setTimeout(loadPDF, 100);
+        });
+    </script>
+</body>
+</html>
