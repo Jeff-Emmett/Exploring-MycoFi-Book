@@ -3,378 +3,203 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exploring Mycofi: Mycelial Design Patterns for Web3 & Beyond</title>
+    <title>Exploring MycoFi</title>
+    <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Turn.js for page flipping -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/0.4.1/turn.min.js"></script>
     <style>
-        * {
+        body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Arial', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
+            min-height: 100vh;
             overflow: hidden;
         }
 
-        .zine-container {
-            position: relative;
-            width: 90vw;
-            max-width: 800px;
-            height: 90vh;
-            max-height: 600px;
-            perspective: 1500px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        .container {
+            text-align: center;
+            padding: 20px;
         }
 
-        .book {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            transform-style: preserve-3d;
-            transition: transform 0.6s ease-in-out;
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        #flipbook {
+            width: 800px;
+            height: 600px;
+            margin: 0 auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
 
         .page {
-            position: absolute;
-            width: 50%;
-            height: 100%;
+            width: 400px;
+            height: 600px;
             background: white;
-            border: 2px solid #ddd;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            transform-origin: left center;
-            transform-style: preserve-3d;
-            transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            overflow: hidden;
-            border-radius: 8px;
-        }
-
-        .page.left {
-            left: 0;
-            z-index: 2;
-        }
-
-        .page.right {
-            right: 0;
-            z-index: 1;
-            transform-origin: right center;
-        }
-
-        .page.turning {
-            z-index: 10;
-        }
-
-        .page.turned {
-            transform: rotateY(-180deg);
-        }
-
-        .page-content {
-            width: 100%;
-            height: 100%;
             display: flex;
-            justify-content: center;
             align-items: center;
-            padding: 20px;
-            position: relative;
+            justify-content: center;
+            border: 1px solid #ddd;
         }
 
-        .page-canvas {
+        .page canvas {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
-            border-radius: 4px;
-        }
-
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 18px;
-            color: #666;
         }
 
         .controls {
-            position: absolute;
-            bottom: -80px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 20px;
-            align-items: center;
-            z-index: 100;
+            margin-top: 20px;
         }
 
-        .nav-btn {
-            background: rgba(255, 255, 255, 0.9);
+        .btn {
+            background: rgba(255,255,255,0.9);
             border: none;
-            padding: 12px 20px;
+            padding: 12px 24px;
+            margin: 0 10px;
             border-radius: 25px;
             cursor: pointer;
             font-size: 16px;
-            font-weight: bold;
-            color: #333;
             transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
 
-        .nav-btn:hover {
-            background: rgba(255, 255, 255, 1);
+        .btn:hover {
+            background: white;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
 
-        .nav-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .page-info {
-            background: rgba(0, 0, 0, 0.7);
+        .loading {
             color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            backdrop-filter: blur(10px);
-        }
-
-        .title {
-            position: absolute;
-            top: -80px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            font-size: 2.5em;
-            font-weight: bold;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            z-index: 100;
-        }
-
-        .flip-animation {
-            animation: pageFlip 0.8s ease-in-out;
-        }
-
-        @keyframes pageFlip {
-            0% { transform: rotateY(0deg); }
-            50% { transform: rotateY(-90deg) scale(0.8); }
-            100% { transform: rotateY(-180deg); }
+            font-size: 18px;
         }
 
         @media (max-width: 768px) {
-            .zine-container {
-                width: 95vw;
-                height: 80vh;
+            #flipbook {
+                width: 90vw;
+                height: calc(90vw * 0.75);
             }
-            
-            .title {
+            .page {
+                width: 45vw;
+                height: calc(90vw * 0.75);
+            }
+            h1 {
                 font-size: 1.8em;
-                top: -60px;
             }
-            
-            .controls {
-                bottom: -60px;
-            }
-            
-            .nav-btn {
-                padding: 10px 16px;
-                font-size: 14px;
-            }
-        }
-
-        /* Add subtle glow effect */
-        .page::before {
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            right: -2px;
-            bottom: -2px;
-            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
-            border-radius: 10px;
-            z-index: -1;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .page:hover::before {
-            opacity: 0.1;
         }
     </style>
 </head>
 <body>
-    <div class="zine-container">
-        <h1 class="title">Exploring Mycofi: Mycelial Design Patterns for Web3 & Beyond</h1>
+    <div class="container">
+        <h1>Exploring MycoFi: Mycelial Design Patterns for Web3 & Beyond</h1>
         
-        <div class="book" id="book">
-            <div class="page left" id="leftPage">
-                <div class="page-content">
-                    <div class="loading">Loading...</div>
-                </div>
-            </div>
-            <div class="page right" id="rightPage">
-                <div class="page-content">
-                    <div class="loading">Loading...</div>
-                </div>
-            </div>
+        <div id="loading" class="loading">Loading your book...</div>
+        
+        <div id="flipbook" style="display: none;">
+            <!-- Pages will be dynamically generated here -->
         </div>
 
-        <div class="controls">
-            <button class="nav-btn" id="prevBtn" onclick="previousPage()">◀ Previous</button>
-            <div class="page-info" id="pageInfo">Page 1 of 1</div>
-            <button class="nav-btn" id="nextBtn" onclick="nextPage()">Next ▶</button>
+        <div class="controls" style="display: none;" id="controls">
+            <button class="btn" onclick="previousPage()">← Previous</button>
+            <span id="pageInfo" style="color: white; margin: 0 20px;">Page 1</span>
+            <button class="btn" onclick="nextPage()">Next →</button>
         </div>
     </div>
 
     <script>
-        // PDF.js setup
+        // Set PDF.js worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
+        
         let pdfDoc = null;
-        let currentSpread = 1; // Current spread (pair of pages)
         let totalPages = 0;
-        let isAnimating = false;
+        let currentPage = 1;
 
-        // Replace 'your-document.pdf' with your actual PDF filename
-        const pdfUrl = './ExploringMycoFiBook.pdf';
-
+        // Load and render PDF
         async function loadPDF() {
             try {
-                pdfDoc = await pdfjsLib.getDocument(pdfUrl).promise;
+                const loadingTask = pdfjsLib.getDocument('./ExploringMycoFiBook.pdf');
+                pdfDoc = await loadingTask.promise;
                 totalPages = pdfDoc.numPages;
-                console.log('PDF loaded, pages:', totalPages);
                 
-                await renderCurrentSpread();
-                updateControls();
+                await renderAllPages();
+                initializeFlipbook();
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('flipbook').style.display = 'block';
+                document.getElementById('controls').style.display = 'block';
+                
             } catch (error) {
                 console.error('Error loading PDF:', error);
-                document.getElementById('leftPage').innerHTML = `
-                    <div class="page-content">
-                        <div style="text-align: center; color: #666;">
-                            <h3>PDF not found</h3>
-                            <p>Please upload your PDF file as 'your-document.pdf'</p>
-                        </div>
-                    </div>`;
+                document.getElementById('loading').innerHTML = 'Could not load PDF. Please make sure "mycofi-zine.pdf" is uploaded to your repository.';
             }
         }
 
-        async function renderPage(pageNum, canvas) {
-            if (!pdfDoc || pageNum > totalPages) return;
-
-            try {
+        async function renderAllPages() {
+            const flipbook = document.getElementById('flipbook');
+            
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                 const page = await pdfDoc.getPage(pageNum);
-                const viewport = page.getViewport({ scale: 1 });
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale: scale });
                 
-                // Calculate scale to fit the page container
-                const container = canvas.parentElement;
-                const containerWidth = container.clientWidth - 40; // padding
-                const containerHeight = container.clientHeight - 40;
-                
-                const scaleX = containerWidth / viewport.width;
-                const scaleY = containerHeight / viewport.height;
-                const scale = Math.min(scaleX, scaleY, 2); // Max scale of 2
-                
-                const scaledViewport = page.getViewport({ scale });
-                
-                canvas.width = scaledViewport.width;
-                canvas.height = scaledViewport.height;
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
                 
                 const renderContext = {
-                    canvasContext: canvas.getContext('2d'),
-                    viewport: scaledViewport
+                    canvasContext: context,
+                    viewport: viewport
                 };
                 
                 await page.render(renderContext).promise;
-            } catch (error) {
-                console.error('Error rendering page:', pageNum, error);
+                
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page';
+                pageDiv.appendChild(canvas);
+                flipbook.appendChild(pageDiv);
             }
         }
 
-        async function renderCurrentSpread() {
-            const leftPageNum = (currentSpread - 1) * 2 + 1;
-            const rightPageNum = leftPageNum + 1;
-
-            // Clear existing content
-            const leftPage = document.getElementById('leftPage');
-            const rightPage = document.getElementById('rightPage');
-
-            // Create canvases
-            leftPage.innerHTML = '<div class="page-content"><canvas class="page-canvas" id="leftCanvas"></canvas></div>';
-            rightPage.innerHTML = '<div class="page-content"><canvas class="page-canvas" id="rightCanvas"></canvas></div>';
-
-            const leftCanvas = document.getElementById('leftCanvas');
-            const rightCanvas = document.getElementById('rightCanvas');
-
-            // Render pages
-            if (leftPageNum <= totalPages) {
-                await renderPage(leftPageNum, leftCanvas);
-            }
-            
-            if (rightPageNum <= totalPages) {
-                await renderPage(rightPageNum, rightCanvas);
-            } else {
-                rightPage.innerHTML = '<div class="page-content"><div style="color: #ccc; font-size: 18px;">End of document</div></div>';
-            }
+        function initializeFlipbook() {
+            $("#flipbook").turn({
+                width: 800,
+                height: 600,
+                autoCenter: true,
+                elevation: 50,
+                gradients: true,
+                when: {
+                    turned: function(event, page, view) {
+                        currentPage = page;
+                        updatePageInfo();
+                    }
+                }
+            });
+            updatePageInfo();
         }
 
-        function updateControls() {
-            const maxSpreads = Math.ceil(totalPages / 2);
-            document.getElementById('pageInfo').textContent = `Spread ${currentSpread} of ${maxSpreads}`;
-            
-            document.getElementById('prevBtn').disabled = currentSpread <= 1;
-            document.getElementById('nextBtn').disabled = currentSpread >= maxSpreads;
+        function updatePageInfo() {
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
         }
 
         function nextPage() {
-            if (isAnimating) return;
-            
-            const maxSpreads = Math.ceil(totalPages / 2);
-            if (currentSpread >= maxSpreads) return;
-
-            isAnimating = true;
-            const rightPage = document.getElementById('rightPage');
-            
-            // Add turning animation
-            rightPage.classList.add('turning', 'flip-animation');
-            
-            setTimeout(async () => {
-                currentSpread++;
-                await renderCurrentSpread();
-                updateControls();
-                
-                rightPage.classList.remove('turning', 'flip-animation');
-                isAnimating = false;
-            }, 400);
+            $("#flipbook").turn("next");
         }
 
         function previousPage() {
-            if (isAnimating || currentSpread <= 1) return;
-
-            isAnimating = true;
-            const leftPage = document.getElementById('leftPage');
-            
-            // Add turning animation
-            leftPage.classList.add('turning', 'flip-animation');
-            
-            setTimeout(async () => {
-                currentSpread--;
-                await renderCurrentSpread();
-                updateControls();
-                
-                leftPage.classList.remove('turning', 'flip-animation');
-                isAnimating = false;
-            }, 400);
+            $("#flipbook").turn("previous");
         }
 
         // Keyboard navigation
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === ' ') {
                 e.preventDefault();
                 nextPage();
@@ -384,33 +209,7 @@
             }
         });
 
-        // Touch/swipe support for mobile
-        let touchStartX = 0;
-        let touchEndX = 0;
-
-        document.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-        });
-
-        document.addEventListener('touchend', (e) => {
-            touchEndX = e.changedTouches[0].screenX;
-            handleSwipe();
-        });
-
-        function handleSwipe() {
-            const swipeThreshold = 50;
-            const diff = touchStartX - touchEndX;
-            
-            if (Math.abs(diff) > swipeThreshold) {
-                if (diff > 0) {
-                    nextPage(); // Swipe left = next page
-                } else {
-                    previousPage(); // Swipe right = previous page
-                }
-            }
-        }
-
-        // Initialize
+        // Load PDF when page loads
         loadPDF();
     </script>
 </body>
