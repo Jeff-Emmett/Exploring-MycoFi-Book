@@ -1,3 +1,11 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Licensed fonts (ABC Dinamo, Seriously Nostalgic) — installed
+# system-wide at ~/.local/share/fonts/Mycofi/ so Scribus picks them
+# up via fontconfig. Don't commit them to the repo.
+fonts/
+*.otf
+*.ttf
+
