@@ -14,6 +14,7 @@
 | `source/pdf/mycofi_book.pdf` | Full book, spreads |
 | `source/pdf/mycofi_single_pages.pdf` | Full book, single pages (spreads split) |
 | `source/pdf/ExploringMycoFiBook_ordered.pdf` | Page-order-corrected full book |
+| `source/glossary.md` | Glossary copy (76 entries), typeset into pages 84–87 |
 
 All binaries above are stored via Git LFS (see `.gitattributes`). Clone with
 `git lfs install` configured or the PDFs arrive as pointer stubs.

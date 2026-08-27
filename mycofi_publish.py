@@ -8,6 +8,11 @@ Sequence:
   2. Pipe that through doc-forge's ``kdp-print-color`` finalizer (sRGB
      colorspace, font embedding belt-and-braces, 300dpi downsample, dates
      stripped) → ``ExploringMycoFiBook_KDP_6x9_bleed_final.pdf``.
+  3. ``build_glossary.py`` typesets ``source/glossary.md`` onto new back-matter
+     pages and adds the matching CONTENTS row. The glossary is not in the
+     InDesign master, so this step has to run after every Scribus rebuild or
+     it is lost. Its pages are vector text only — already sRGB with embedded
+     fonts — so they do not need a second finalize pass.
 
 The cover is built separately by ``build_kdp_cover.py``; not handled here.
 
@@ -23,6 +28,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 SCRIBUS_SCRIPT = REPO / "scribus_kdp_bleed.py"
+GLOSSARY_SCRIPT = REPO / "build_glossary.py"
 INTERIOR_PDF = REPO / "ExploringMycoFiBook_KDP_6x9_bleed.pdf"
 FINAL_PDF = REPO / "ExploringMycoFiBook_KDP_6x9_bleed_final.pdf"
 
@@ -58,6 +64,18 @@ def main() -> int:
         return 1
     FINAL_PDF.write_bytes(finalized)
     print(f"  wrote {FINAL_PDF.name} ({len(finalized):,} bytes)")
+
+    print()
+    print("=== glossary phase ===")
+    rc = subprocess.run(
+        [sys.executable, str(GLOSSARY_SCRIPT), "--in", str(FINAL_PDF),
+         "--out", str(FINAL_PDF)],
+        cwd=REPO,
+    ).returncode
+    if rc != 0:
+        print(f"build_glossary.py exited {rc}; aborting", file=sys.stderr)
+        return rc
+
     print()
     print("DONE — submission-ready interior at", FINAL_PDF)
     return 0
