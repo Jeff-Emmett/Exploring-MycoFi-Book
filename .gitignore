@@ -9,3 +9,6 @@ fonts/
 *.otf
 *.ttf
 
+
+# Build outputs and fonts rebuilt from the designer PDF (licensed: never commit)
+build/

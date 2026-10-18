@@ -4,6 +4,9 @@
 
 | Path | What it is |
 |---|---|
+| `source/pdf/ExploringMycoFiBook_6x9_base.pdf` | **Build input.** Designer's InDesign export at 6x9 (83 pp, pre-glossary) |
+| `print-ready/ExploringMycoFi_interior_{kdp,lulu,web}.pdf` | 2nd-edition interiors built by `build_print.py` |
+| `print-ready/ExploringMycoFi_cover_{kdp,lulu}.pdf` | Matching one-piece wrap covers (spine sized per printer) |
 | `print-ready/ExploringMycoFiBook_KDP_6x9.pdf` | 6×9 interior exported for KDP upload |
 | `ExploringMycoFiBook_KDP_6x9_bleed_final.pdf` | Scribus-built 6×9 interior with bleed |
 | `cover_kdp_6x9.pdf` | Scribus-built full wrap cover (front + spine + back) |
@@ -39,6 +42,24 @@ fontconfig. Source copies live in `Document fonts/` inside the design zip.
 
 ## Rebuilding
 
-`build_kdp_interior.py` and `build_kdp_cover.py` drive Scribus to produce the
-KDP-ready 6×9 files. `mycofi_publish.py` wraps the build and runs the
-doc-forge `kdp-print-color` finalizer.
+```
+python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python build_print.py [--isbn-kdp 979-8-…] [--isbn-lulu 978-…] [--paper standard-color]
+```
+
+`build_print.py` starts from the designer's PDF, not from the IDML. It repairs the
+export (page boxes, InDesign's Windows-1252-in-MacRoman glyph bug that printed
+’ “ ” – as í ì î ≠, and the "Unlicensed Trial" ABC Connect Mono, swapped for the
+identical licensed font), applies the 2026 edit list (`mycofi_print/edits.py`),
+appends the glossary, drops the two blank lead pages and renumbers, then writes
+KDP (outside-edge bleed), Lulu (all-sides bleed) and web (trimmed, two-up)
+interiors and both covers. New text is set in the book's own faces, rebuilt from
+the fonts embedded in the designer PDF into `build/fonts/` (gitignored — licensed).
+The cover must be rebuilt whenever the page count changes: spine width follows it.
+
+Not used any more: the Scribus/IDML route (`mycofi_publish.py`,
+`scribus_kdp_bleed.py`, `build_kdp_interior.py`, `build_kdp_cover.py`,
+`build_glossary.py`). Scribus' IDML import lost every font and image, and the
+"final" PDF it was credited with was really the InDesign export re-boxed.
+DesignCraft 0.9 (Rust InDesign clone) imports the IDML well but mis-threads text
+on several pages and exports 600-800 MB PDFs, so it is not yet a print tool.
