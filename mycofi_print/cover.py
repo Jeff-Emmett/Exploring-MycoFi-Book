@@ -49,6 +49,10 @@ CLOSING = ("If there is any hope for a transition away from extraction, dominati
            "economies must be realigned with nature’s ecologies - and for that, we can’t afford "
            "to ignore what mushrooms have to teach us.")
 ENDORSEMENTS = [
+    # Opening sentence of his full endorsement (interior p. 8), verbatim.
+    ("“MycoFi beautifully illustrates and underscores that mycelium’s design is borne from "
+     "the universe.”",
+     "Paul Stamets, renowned mycologist and author of Mycelium Running"),
     ("“Fungi invite us to participate in a commons-based economy where resources are "
      "metabolized, shared, and regenerated simultaneously through the very same process. "
      "MycoFi is less about how to imitate them than how to join in the dance.”",
@@ -57,12 +61,11 @@ ENDORSEMENTS = [
      "optimization. Hopefully, this work will provide another reminder that the answers "
      "have always been there. Let’s listen together.”",
      "Amber Case, author of Calm Technology"),
-    # Closing sentence of his full endorsement (interior p. 8), verbatim.
-    ("“By learning from mycelium, our species can achieve the next quantum level in our "
-     "evolution.”",
-     "Paul Stamets, renowned mycologist and author of Mycelium Running"),
 ]
 BUY_IT_FORWARD = "https://mycofi.earth/buy-it-forward"
+BUY_IT_FORWARD_NOTE = ("Help mycelially distribute these ideas! Buy a copy forward for "
+                       "distribution through the mycelial network.")
+
 
 
 def spine_inches(platform: str, pages: int, paper: str = "standard-color") -> float:
@@ -75,6 +78,36 @@ def spine_inches(platform: str, pages: int, paper: str = "standard-color") -> fl
 
 # CMYK fills of the back cover's yellow and pink copy boxes in the designer file.
 BOX_FILLS = ([0.019989, 0.0400085, 0.710938, 0], [0, 0.129883, 0.0100098, 0])
+
+
+@lru_cache(maxsize=None)
+def _ink(font_path: Path, s: str) -> tuple[float, float]:
+    """(lowest, highest) ink of ``s`` in em, from the glyph outlines."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+    font = TTFont(font_path)
+    glyphs, cmap = font.getGlyphSet(), font.getBestCmap()
+    lo = hi = 0.0
+    for ch in s:
+        if ord(ch) in cmap:
+            pen = BoundsPen(glyphs)
+            glyphs[cmap[ord(ch)]].draw(pen)
+            if pen.bounds:
+                lo, hi = min(lo, pen.bounds[1]), max(hi, pen.bounds[3])
+    upm = font["head"].unitsPerEm
+    return lo / upm, hi / upm
+
+
+def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, cx: float,
+                y: float, color, from_top: bool) -> None:
+    """Spine text reading top-to-bottom (letter tops toward the front cover), ink
+    centred on ``cx``; starts at ``y`` if ``from_top`` else ends there."""
+    lo, hi = _ink(fonts.paths[font], s)
+    baseline_x = cx - (lo + hi) / 2 * size
+    y0 = y if from_top else y - fonts[font].text_length(s, size)
+    w = fitz.TextWriter(page.rect)
+    w.append((baseline_x, y0), s, font=fonts[font], fontsize=size)
+    w.write_text(page, color=color, morph=(fitz.Point(baseline_x, y0), fitz.Matrix(-90)))
 
 
 @lru_cache(maxsize=None)
@@ -135,33 +168,37 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         page.show_pdf_page(panel, src, 0, clip=clip)
 
     # ---- front ----
+    # The art leaves the top 160pt clear (mushroom cap starts at y~165) and a
+    # pocket left of the stem below the cap (x < ~205pt from the fold, y 345-440).
     fx = front.x0 + SAFE
-    text(page, fonts, (fx, 112), "Exploring", font="display", size=68, color=TITLE_YELLOW)
-    text(page, fonts, (fx, 182), "MycoFi", font="display", size=68, color=TITLE_YELLOW)
-    for i, line in enumerate(("Mycelial Design Patterns", "for Web3 and Beyond")):
-        text(page, fonts, (fx, 428 + i * 25), line, font="medium", size=21, color=SUB_PINK)
+    text(page, fonts, (fx, 98), "Exploring", font="display", size=62, color=TITLE_YELLOW)
+    text(page, fonts, (fx, 154), "MycoFi", font="display", size=62, color=TITLE_YELLOW)
+    for i, line in enumerate(("Mycelial Design", "Patterns for Web3", "and Beyond")):
+        text(page, fonts, (fx, 372 + i * 24), line, font="medium", size=20, color=SUB_PINK)
     right = front.x1 - BLEED - SAFE
     for i, name in enumerate(("Jeff Emmett", "Jessica Zartler")):
-        text(page, fonts, (right, H - BLEED - SAFE - 24 + i * 24), name, font="display",
+        text(page, fonts, (right, H - BLEED - SAFE - 46 + i * 23), name, font="display",
              size=19, color=TITLE_YELLOW, align="right", word_space=2.0)
+    text(page, fonts, (right, H - BLEED - SAFE - 2), "Foreword by Scott Morris",
+         font="medium", size=10, color=SUB_PINK, align="right")
 
     # ---- spine ----
     if spine_title is None:
         spine_title = (spine - 2 * clear) >= 4.5 and pages > 80
     if spine_title:
+        # Both lines are sized so their ink fills the spine minus the printer's
+        # clearance on each side; the author line has no descenders, so it is
+        # capped below the title to keep the hierarchy.
         avail = spine - 2 * clear
-        size = avail / 0.92          # Seriously Nostalgic: ascender-to-descender ~0.92 em
-        title = "Exploring MycoFi"
-        tw = fonts["display"].text_length(title, size)
         cx = spine_r.x0 + spine / 2
-        # Reads top-to-bottom; letter tops face the front cover, so the baseline
-        # sits left of centre.
-        baseline_x = cx - size * 0.32
-        y0 = (H - tw) / 2
-        w = fitz.TextWriter(page.rect)
-        w.append((baseline_x, y0), title, font=fonts["display"], fontsize=size)
-        w.write_text(page, color=TITLE_YELLOW,
-                     morph=(fitz.Point(baseline_x, y0), fitz.Matrix(-90)))
+        end_inset = BLEED + 0.6 * PT_PER_IN
+        title, authors = "Exploring MycoFi", "Emmett & Zartler"
+        lo, hi = _ink(fonts.paths["display"], title)
+        t_size = avail / (hi - lo)
+        lo, hi = _ink(fonts.paths["display"], authors)
+        a_size = min(avail / (hi - lo), t_size * 0.85)
+        _spine_line(page, fonts, title, "display", t_size, cx, end_inset, TITLE_YELLOW, True)
+        _spine_line(page, fonts, authors, "display", a_size, cx, H - end_inset, SUB_PINK, False)
 
     # ---- back ----
     bx0, bx1 = BLEED + SAFE, BLEED + TRIM_W - SAFE
@@ -198,20 +235,31 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         text(page, fonts, (bx1 - pad, y), who, font="medium", size=qsize, align="right")
         y += qlead + 8
 
-    # QR (bottom left); the bottom-right 2" x 1.2" stays clear for the printer's
-    # ISBN barcode (KDP and Lulu both stamp their own when they assign the ISBN).
-    q_side = 72.0
-    q_bottom = H - BLEED - SAFE - 12
+    # QR + note (bottom left). The bottom-right 2" x 1.2" stays clear for the
+    # printer's ISBN barcode: KDP and Lulu both stamp their own there.
+    barcode_zone = fitz.Rect(BLEED + TRIM_W - 18 - 144, H - BLEED - 18 - 86.4,
+                             BLEED + TRIM_W - 18, H - BLEED - 18)
+    q_side = 92.0
+    q_bottom = H - BLEED - SAFE - 6
     qr_bg = fitz.Rect(bx0, q_bottom - q_side - 8, bx0 + q_side + 16, q_bottom + 14)
     rounded_rect(page, qr_bg, 8, fill=(1, 1, 1))
     draw_qr(page, segno.make(BUY_IT_FORWARD, error="m"),
-             fitz.Rect(bx0 + 8, q_bottom - q_side, bx0 + 8 + q_side, q_bottom))
+            fitz.Rect(bx0 + 8, q_bottom - q_side, bx0 + 8 + q_side, q_bottom))
     text(page, fonts, (qr_bg.x0 + qr_bg.width / 2, q_bottom + 9), "mycofi.earth/buy-it-forward",
-         font="medium", size=5.6, align="center")
-    barcode_zone = fitz.Rect(BLEED + TRIM_W - 18 - 144, H - BLEED - 18 - 86.4,
-                             BLEED + TRIM_W - 18, H - BLEED - 18)
-    if ey + eh > barcode_zone.y0 - 6 or qr_bg.y0 < ey + eh + 6:
-        raise SystemExit(f"back cover copy overruns the QR/barcode band (ends {ey + eh:.0f})")
+         font="medium", size=6.2, align="center")
+    note_size, note_lead, note_pad = 8.0, 10.6, 9.0
+    note_w = barcode_zone.x0 - 10 - (qr_bg.x1 + 8)
+    note = wrap([Run(BUY_IT_FORWARD_NOTE, "medium")], fonts, note_size, note_w - 2 * note_pad)
+    note_h = (len(note) - 1) * note_lead + note_size * 0.75 + 2 * note_pad + 2
+    bubble = fitz.Rect(qr_bg.x1 + 8, qr_bg.y0 + (qr_bg.height - note_h) / 2,
+                       qr_bg.x1 + 8 + note_w, qr_bg.y0 + (qr_bg.height + note_h) / 2)
+    rounded_rect(page, bubble, 10, fill=BOX_YELLOW)
+    draw_lines(page, note, fonts, note_size, bubble.x0 + note_pad,
+               bubble.y0 + note_pad + note_size * 0.75, note_lead)
+    if bubble.intersects(barcode_zone):
+        raise SystemExit("buy-it-forward note runs into the barcode area")
+    if qr_bg.y0 < ey + eh + 6:
+        raise SystemExit(f"back cover copy overruns the QR band (ends {ey + eh:.0f})")
 
     page.set_trimbox(fitz.Rect(BLEED, BLEED, W - BLEED, H - BLEED))
     if platform == "lulu":
