@@ -104,8 +104,9 @@ def main() -> int:
     ap.add_argument("--isbn-lulu")
     ap.add_argument("--paper", default="standard-color", choices=sorted(cover.KDP_PER_PAGE),
                     help="KDP paper (sets the spine width)")
-    ap.add_argument("--lulu-spine-title", action="store_true",
-                    help="force a spine title on Lulu (below its 0.125in clearance rule)")
+    ap.add_argument("--spine-clear", type=float, default=cover.SPINE_CLEAR,
+                    help="spine text to spine edge, inches (printers recommend "
+                         f"KDP {cover.KDP_SPINE_CLEAR}, Lulu {cover.LULU_SPINE_CLEAR})")
     args = ap.parse_args()
 
     fonts = Fonts()
@@ -122,7 +123,7 @@ def main() -> int:
         if platform in ("kdp", "lulu"):
             cov = OUT_DIR / f"ExploringMycoFi_cover_{platform}.pdf"
             info = cover.build(platform, pages, cov, fonts, paper=args.paper,
-                               spine_title=True if args.lulu_spine_title else None)
+                               spine_clear=args.spine_clear)
             print(f"  {cov.name}: {info['width_in']:.4f}x{info['height_in']:.4f}in, "
                   f"spine {info['spine_in']:.4f}in, spine title: {info['spine_title']}")
         else:

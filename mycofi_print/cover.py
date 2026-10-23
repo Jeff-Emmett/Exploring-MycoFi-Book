@@ -12,8 +12,10 @@ from functools import lru_cache
 from pathlib import Path
 
 import fitz
+import numpy as np
 import pikepdf
 import segno
+from PIL import Image, ImageFilter
 
 from .fonts import Fonts
 from .geometry import BLEED, PT_PER_IN, TRIM_H, TRIM_W
@@ -26,8 +28,14 @@ SAFE = 36.0                         # 0.5" — Lulu's safety margin; KDP needs l
 # Spine thickness per page, inches. KDP: kdp.amazon.com/help/topic/G201953020.
 KDP_PER_PAGE = {"standard-color": 0.002252, "premium-color": 0.002347,
                 "bw-white": 0.002252, "bw-cream": 0.0025}
-KDP_SPINE_CLEAR = 0.0625            # text to spine edge
-LULU_SPINE_CLEAR = 0.125            # Lulu Book Creation Guide p.17
+# Spine text to spine edge, inches. The printers ask for 0.0625 (KDP) and 0.125
+# (Lulu) to absorb fold drift; the author chose the largest type the spine holds,
+# so only a hair of clearance is kept by default (see build(spine_clear=)).
+KDP_SPINE_CLEAR = 0.0625
+LULU_SPINE_CLEAR = 0.125
+SPINE_CLEAR = 0.02
+TITLE_ART_GAP = 8.0                 # pt between the title's ink and the mushroom art
+TITLE_LINE_GAP = 2.0                # pt between "Exploring" descenders and "MycoFi"
 
 BG = (0.13141070306301117, 0.11682306975126266, 0.11407645046710968)
 TITLE_YELLOW = (0xFB / 255, 0xEA / 255, 0x6A / 255)
@@ -42,8 +50,8 @@ BLURB_REST = (" guides readers on an underground exploration into the world wise
               "biomimetic alternatives to status-quo economic systems that demand infinite "
               "growth on a finite planet.")
 PATTERNS_INTRO = "MycoFi translates six design patterns of mycelial ecologies to Web3 economies:"
-PATTERNS = ["Network Infrastructure  •  Fractal Nature  •  Emergent Coordination",
-            "Dynamic Flow  •  Mutual Reciprocity  •  Polycentric Pluralism"]
+PATTERNS = ["Network Infrastructure", "Fractal Nature", "Emergent Coordination",
+            "Dynamic Flow", "Mutual Reciprocity", "Polycentric Pluralism"]
 CLOSING = ("If there is any hope for a transition away from extraction, domination, and "
            "planetary overshoot, towards regeneration, equity, and planetary healing, our "
            "economies must be realigned with nature’s ecologies - and for that, we can’t afford "
@@ -63,8 +71,8 @@ ENDORSEMENTS = [
      "Amber Case, author of Calm Technology"),
 ]
 BUY_IT_FORWARD = "https://mycofi.earth/buy-it-forward"
-BUY_IT_FORWARD_NOTE = ("Help mycelially distribute these ideas! Buy a copy forward for "
-                       "distribution through the mycelial network.")
+BUY_IT_FORWARD_NOTE = ("Want to see these ideas myceliate? Buy-it-forward to provide a book "
+                       "to disseminate to the network.")
 
 
 
@@ -110,6 +118,62 @@ def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, c
     w.write_text(page, color=color, morph=(fitz.Point(baseline_x, y0), fitz.Matrix(-90)))
 
 
+def _ink_mask(page: fitz.Page, clip: fitz.Rect) -> np.ndarray:
+    """Pixels (1 per pt) of ``clip`` that differ visibly from the cover's dark ground."""
+    pm = page.get_pixmap(dpi=72, clip=clip)
+    a = np.frombuffer(pm.samples, np.uint8).reshape(pm.height, pm.width, pm.n)[..., :3]
+    ground = np.array(BG) * 255
+    return np.abs(a.astype(int) - ground).sum(2) > 60
+
+
+def _text_mask(fonts: Fonts, size: float, s: str, x: float, baseline: float,
+               w: float, h: float) -> np.ndarray:
+    doc = fitz.open()
+    p = doc.new_page(width=w, height=h)
+    tw = fitz.TextWriter(p.rect)
+    tw.append((x, baseline), s, font=fonts["display"], fontsize=size)
+    tw.write_text(p, color=(0, 0, 0))
+    pm = p.get_pixmap(dpi=72)
+    return np.frombuffer(pm.samples, np.uint8).reshape(pm.height, pm.width, pm.n)[..., 0] < 128
+
+
+def _grow(mask: np.ndarray, pt: float) -> np.ndarray:
+    r = max(1, round(pt))
+    img = Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(2 * r + 1))
+    return np.asarray(img) > 0
+
+
+def _shift_down(mask: np.ndarray, dy: int) -> np.ndarray:
+    out = np.zeros_like(mask)
+    out[dy:] = mask[:mask.shape[0] - dy]
+    return out
+
+
+def _fit_title(fonts: Fonts, art: np.ndarray, x_left: float, x_right: float, y_top: float):
+    """Largest "Exploring" / "MycoFi" (second line starting under the i) that stays
+    inside the safe area and clear of the art. Returns (size, b1, x2, b2)."""
+    h, w = art.shape
+    keep_out = _grow(art, TITLE_ART_GAP)
+    disp = fonts["display"]
+    hi1 = _ink(fonts.paths["display"], "Exploring")[1]
+    for size in np.arange(110.0, 40.0, -0.5):
+        x2 = x_left + disp.text_length("Explor", size)
+        if max(x_left + disp.text_length("Exploring", size),
+               x2 + disp.text_length("MycoFi", size)) > x_right:
+            continue
+        b1 = y_top + hi1 * size
+        line1 = _grow(_text_mask(fonts, size, "Exploring", x_left, b1, w, h), TITLE_LINE_GAP)
+        b2_ref = b1 + 0.5 * size
+        line2 = _text_mask(fonts, size, "MycoFi", x2, b2_ref, w, h)
+        for dy in range(0, round(0.8 * size)):          # tightest leading that clears line 1
+            moved = _shift_down(line2, dy)
+            if not (moved & line1).any():
+                break
+        if not (moved & keep_out).any():
+            return float(size), b1, x2, b2_ref + dy
+    raise SystemExit("cover title: no size fits above the art")
+
+
 @lru_cache(maxsize=None)
 def _art_bytes(page_index: int) -> bytes:
     """One page of the designer cover with its type and copy boxes removed."""
@@ -146,9 +210,9 @@ def _art(page_index: int) -> fitz.Document:
 
 
 def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "standard-color",
-          spine_title: bool | None = None) -> dict:
+          spine_title: bool | None = None, spine_clear: float = SPINE_CLEAR) -> dict:
     spine = spine_inches(platform, pages, paper) * PT_PER_IN
-    clear = (KDP_SPINE_CLEAR if platform == "kdp" else LULU_SPINE_CLEAR) * PT_PER_IN
+    clear = spine_clear * PT_PER_IN
     W, H = 2 * (BLEED + TRIM_W) + spine, TRIM_H + 2 * BLEED
     doc = fitz.open()
     page = doc.new_page(width=W, height=H)
@@ -168,30 +232,35 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         page.show_pdf_page(panel, src, 0, clip=clip)
 
     # ---- front ----
-    # The art leaves the top 160pt clear (mushroom cap starts at y~165) and a
-    # pocket left of the stem below the cap (x < ~205pt from the fold, y 345-440).
+    # Title: as large as the clear band above the mushroom allows, measured
+    # against the art itself. The subtitle sits in the pocket left of the stem
+    # below the cap (x < ~205pt from the fold, y 345-440).
     fx = front.x0 + SAFE
-    text(page, fonts, (fx, 98), "Exploring", font="display", size=62, color=TITLE_YELLOW)
-    text(page, fonts, (fx, 154), "MycoFi", font="display", size=62, color=TITLE_YELLOW)
+    art = _ink_mask(page, front)
+    size, b1, x2, b2 = _fit_title(fonts, art, SAFE, TRIM_W - SAFE, BLEED + SAFE)
+    text(page, fonts, (fx, b1), "Exploring", font="display", size=size, color=TITLE_YELLOW)
+    text(page, fonts, (front.x0 + x2, b2), "MycoFi", font="display", size=size,
+         color=TITLE_YELLOW)
     for i, line in enumerate(("Mycelial Design", "Patterns for Web3", "and Beyond")):
         text(page, fonts, (fx, 372 + i * 24), line, font="medium", size=20, color=SUB_PINK)
     right = front.x1 - BLEED - SAFE
     for i, name in enumerate(("Jeff Emmett", "Jessica Zartler")):
-        text(page, fonts, (right, H - BLEED - SAFE - 46 + i * 23), name, font="display",
-             size=19, color=TITLE_YELLOW, align="right", word_space=2.0)
-    text(page, fonts, (right, H - BLEED - SAFE - 2), "Foreword by Scott Morris",
-         font="medium", size=10, color=SUB_PINK, align="right")
+        text(page, fonts, (right, H - BLEED - SAFE - 56 + i * 27), name, font="display",
+             size=23, color=TITLE_YELLOW, align="right", word_space=2.4)
+    text(page, fonts, (right, H - BLEED - SAFE - 4), "Foreword by Scott Morris",
+         font="display", size=10, color=TITLE_YELLOW, align="right", word_space=1.2)
 
     # ---- spine ----
     if spine_title is None:
         spine_title = (spine - 2 * clear) >= 4.5 and pages > 80
     if spine_title:
-        # Both lines are sized so their ink fills the spine minus the printer's
-        # clearance on each side; the author line has no descenders, so it is
-        # capped below the title to keep the hierarchy.
+        # Both lines are sized so their ink fills the spine minus ``clear`` on each
+        # side; the author line has no descenders, so it is capped below the title
+        # to keep the hierarchy. Each line keeps the 0.5" safe distance from the
+        # head and foot trim.
         avail = spine - 2 * clear
         cx = spine_r.x0 + spine / 2
-        end_inset = BLEED + 0.6 * PT_PER_IN
+        end_inset = BLEED + SAFE
         title, authors = "Exploring MycoFi", "Emmett & Zartler"
         lo, hi = _ink(fonts.paths["display"], title)
         t_size = avail / (hi - lo)
@@ -209,15 +278,21 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     blurb = wrap([Run(BLURB_LEAD, "medium"), Run(BLURB_REST)], fonts, size, inner)
     intro = wrap([Run(PATTERNS_INTRO, "medium")], fonts, size, inner)
     closing = wrap([Run(CLOSING)], fonts, size, inner)
-    n = len(blurb) + len(intro) + len(PATTERNS) + len(closing)
+    numbered = [Run(f"{i}. ", "medium") if k == 0 else Run(name + "   ", "italic")
+                for i, name in enumerate(PATTERNS, 1) for k in (0, 1)]
+    rows = [numbered[:6], numbered[6:]]
+    pattern_lines = [wrap(r, fonts, size, inner) for r in rows]
+    if any(len(pl) > 1 for pl in pattern_lines):
+        raise SystemExit("numbered design patterns no longer fit two lines")
+    n = len(blurb) + len(intro) + len(rows) + len(closing)
     y_box = BLEED + SAFE
     box_h = n * lead + 3 * 7 + 2 * pad - 4
     rounded_rect(page, fitz.Rect(bx0, y_box, bx1, y_box + box_h), 12, fill=BOX_YELLOW)
     y = y_box + pad + size
     y = draw_lines(page, blurb, fonts, size, bx0 + pad, y, lead) + lead + 7
     y = draw_lines(page, intro, fonts, size, bx0 + pad, y, lead) + lead + 3
-    for line in PATTERNS:
-        text(page, fonts, ((bx0 + bx1) / 2, y), line, font="italic", size=size, align="center")
+    for pl in pattern_lines:
+        draw_lines(page, pl, fonts, size, bx0 + pad, y, lead, width=inner, align="center")
         y += lead
     y = draw_lines(page, closing, fonts, size, bx0 + pad, y + 4, lead)
 
@@ -239,20 +314,20 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     # printer's ISBN barcode: KDP and Lulu both stamp their own there.
     barcode_zone = fitz.Rect(BLEED + TRIM_W - 18 - 144, H - BLEED - 18 - 86.4,
                              BLEED + TRIM_W - 18, H - BLEED - 18)
+    # Laid out bottom-up: the note bubble on the safe line, the QR card above it.
+    note_size, note_lead, note_pad = 8.0, 10.6, 7.0
+    note_w = barcode_zone.x0 - 10 - bx0
+    note = wrap([Run(BUY_IT_FORWARD_NOTE, "medium")], fonts, note_size, note_w - 2 * note_pad)
+    note_h = (len(note) - 1) * note_lead + note_size * 0.95 + 2 * note_pad
+    bubble = fitz.Rect(bx0, H - BLEED - SAFE + 4 - note_h, bx0 + note_w, H - BLEED - SAFE + 4)
     q_side = 92.0
-    q_bottom = H - BLEED - SAFE - 6
-    qr_bg = fitz.Rect(bx0, q_bottom - q_side - 8, bx0 + q_side + 16, q_bottom + 14)
+    qr_bg = fitz.Rect(bx0, bubble.y0 - 8 - (q_side + 22), bx0 + q_side + 16, bubble.y0 - 8)
+    q_bottom = qr_bg.y0 + 8 + q_side
     rounded_rect(page, qr_bg, 8, fill=(1, 1, 1))
     draw_qr(page, segno.make(BUY_IT_FORWARD, error="m"),
             fitz.Rect(bx0 + 8, q_bottom - q_side, bx0 + 8 + q_side, q_bottom))
     text(page, fonts, (qr_bg.x0 + qr_bg.width / 2, q_bottom + 9), "mycofi.earth/buy-it-forward",
          font="medium", size=6.2, align="center")
-    note_size, note_lead, note_pad = 8.0, 10.6, 9.0
-    note_w = barcode_zone.x0 - 10 - (qr_bg.x1 + 8)
-    note = wrap([Run(BUY_IT_FORWARD_NOTE, "medium")], fonts, note_size, note_w - 2 * note_pad)
-    note_h = (len(note) - 1) * note_lead + note_size * 0.75 + 2 * note_pad + 2
-    bubble = fitz.Rect(qr_bg.x1 + 8, qr_bg.y0 + (qr_bg.height - note_h) / 2,
-                       qr_bg.x1 + 8 + note_w, qr_bg.y0 + (qr_bg.height + note_h) / 2)
     rounded_rect(page, bubble, 10, fill=BOX_YELLOW)
     draw_lines(page, note, fonts, note_size, bubble.x0 + note_pad,
                bubble.y0 + note_pad + note_size * 0.75, note_lead)
