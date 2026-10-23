@@ -19,7 +19,8 @@ from PIL import Image, ImageFilter
 
 from .fonts import Fonts
 from .geometry import BLEED, PT_PER_IN, TRIM_H, TRIM_W
-from .layout import Run, draw_lines, draw_qr, remove_text, rounded_rect, text, wrap
+from .layout import (Run, draw_lines, draw_qr, ink_extent as _ink, remove_text,
+                     rounded_rect, text, wrap)
 
 REPO = Path(__file__).resolve().parent.parent
 ART = REPO / "cover.pdf"
@@ -84,24 +85,6 @@ def spine_inches(platform: str, pages: int, paper: str = "standard-color") -> fl
 
 # CMYK fills of the back cover's yellow and pink copy boxes in the designer file.
 BOX_FILLS = ([0.019989, 0.0400085, 0.710938, 0], [0, 0.129883, 0.0100098, 0])
-
-
-@lru_cache(maxsize=None)
-def _ink(font_path: Path, s: str) -> tuple[float, float]:
-    """(lowest, highest) ink of ``s`` in em, from the glyph outlines."""
-    from fontTools.pens.boundsPen import BoundsPen
-    from fontTools.ttLib import TTFont
-    font = TTFont(font_path)
-    glyphs, cmap = font.getGlyphSet(), font.getBestCmap()
-    lo = hi = 0.0
-    for ch in s:
-        if ord(ch) in cmap:
-            pen = BoundsPen(glyphs)
-            glyphs[cmap[ord(ch)]].draw(pen)
-            if pen.bounds:
-                lo, hi = min(lo, pen.bounds[1]), max(hi, pen.bounds[3])
-    upm = font["head"].unitsPerEm
-    return lo / upm, hi / upm
 
 
 def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, cx: float,
@@ -340,7 +323,7 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         pm = page.get_pixmap(dpi=400)
         flat = fitz.open()
         fp = flat.new_page(width=W, height=H)
-        fp.insert_image(fp.rect, stream=pm.tobytes("jpeg", jpg_quality=92))
+        fp.insert_image(fp.rect, stream=pm.tobytes("jpeg", jpg_quality=92), keep_proportion=False)
         flat.save(out, garbage=4, deflate=True)
     else:
         doc.save(out, garbage=4, deflate=True)

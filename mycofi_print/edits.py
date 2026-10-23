@@ -18,9 +18,10 @@ from PIL import Image
 
 from .fonts import Fonts, sup
 from .geometry import PAGE_H, PAGE_W, TRIM_RECT
+from .fill import cover_fit, mirror_extend, mirror_extend_down, stretch_extend
 from .layout import (BODY_LEADING, BODY_SIZE, HEAD_SIZE, LINK_GREEN, TITLE_SIZE, Run,
-                     draw_lines, draw_qr, fill_rect, remove_images, remove_text, rounded_rect,
-                     text, wrap)
+                     draw_lines, draw_qr, fill_rect, ink_extent, remove_images, remove_text,
+                     rounded_rect, text, wrap)
 
 DROPPED = 2                       # orig pages 1-2 are removed
 FIRST_FOLIO_ORIG = 9              # no folios on front matter before CONTENTS
@@ -54,9 +55,9 @@ def clean(s: str) -> str:
 
 FOLIO_SIZE = 7.81
 FOLIO_INSET = 46.0        # pill centre from the outside trim (0.64")
-FOLIO_RISE = 23.0         # pill centre above the bottom trim: inside the 0.42" frame
-                          # band on every page (so it never straddles the art) and
-                          # 0.28" clear of the trim (KDP needs 0.25")
+FOLIO_RISE = 38.0         # pill centre above the bottom trim: the pill sits just inside
+                          # the 0.42" coloured frame, its number 0.5" clear of the trim
+                          # (meets Lulu's safety margin; KDP needs 0.25")
 
 
 def folios(doc: fitz.Document, fonts: Fonts) -> None:
@@ -342,7 +343,7 @@ def _heal_strip(page: fitz.Page, r: fitz.Rect, dpi: int = 300) -> None:
     out = (top[None] * (1 - t) + bot[None] * t).clip(0, 255).astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, "PNG")
-    page.insert_image(pad, stream=buf.getvalue())
+    page.insert_image(pad, stream=buf.getvalue(), keep_proportion=False)
 
 
 def p77_parting(page: fitz.Page, fonts: Fonts) -> None:
@@ -405,11 +406,15 @@ def p62_homage(page: fitz.Page, fonts: Fonts) -> None:
     natural = fonts["display_italic"].text_length(label, 9.76)
     text(page, fonts, (56.0, 179.4), label, font="display_italic", size=9.76,
          tracking=(251.3 - natural) / (len(label) - 1))     # designer's span: 56.0-307.3
-    box = fitz.Rect(46.2, 189.0, 404.0, 620.0)
+    # Cream panel runs off the gutter and down to the frame line, so the folio sits
+    # wholly on it; the copy stops short of the folio.
+    box = fitz.Rect(46.2, 189.0, PAGE_W, 627.0)
     fill_rect(page, box, POPOUT_CREAM)
+    text_end = TRIM_RECT.y1 - FOLIO_RISE - 6 - 9           # 9pt above the folio pill
 
-    x, width = 56.0, box.x1 - 10 - 56.0
-    lead, cap_size, cap_lead, gap = 12.0, 8.3, 11.0, 8.0     # body size, a touch tighter
+    x, width = 56.0, TRIM_RECT.x1 - 36 - 56.0               # 0.5" gutter margin for text
+    lead, cap_size, cap_lead = 12.0, 8.3, 11.0              # body size, a touch tighter
+    gap = 8.0
 
     def layout(belt_w):
         items, y = [], 206.0
@@ -426,10 +431,14 @@ def p62_homage(page: fitz.Page, fonts: Fonts) -> None:
         return items, y - lead - gap
 
     belt_w = width
-    while (res := layout(belt_w))[1] > box.y1 - 10:
+    while (res := layout(belt_w))[1] > text_end:
         belt_w -= 4
         if belt_w < 302:                     # never smaller than the designer's
             raise SystemExit("p62 homage no longer fits its box")
+    # Spread what is left over evenly between the blocks instead of leaving it at
+    # the bottom of the panel.
+    gap += (text_end - res[1]) / (len(HOMAGE) - 1)
+    res = layout(belt_w)
     for kind, y, data in res[0]:
         if kind == "belt":
             bx = x + (width - belt_w) / 2
@@ -437,6 +446,93 @@ def p62_homage(page: fitz.Page, fonts: Fonts) -> None:
         else:
             lines, size, ld = data
             draw_lines(page, lines, fonts, size, x, y, ld)
+
+
+# ---- art that stopped short of the gutter (left-hand pages) ------------------------
+
+# Where the designer's verso art ends (402.8; trim is at 441). Mirrors start half a
+# point inside it: the art's last column is white and would mirror into a hairline.
+GUTTER_EDGE = 402.3
+
+
+def p20_gutter(page: fitz.Page) -> None:
+    """Lower photo under the Introduction title: continue it to the gutter."""
+    mirror_extend(page, GUTTER_EDGE, 351.6, 628.0, PAGE_W)
+
+
+def p28_gutter(page: fitz.Page) -> None:
+    """Run the Fun-gal Facts tab off the gutter and drop the photo to meet it."""
+    mirror_extend_down(page, 370.0, 56.0, TRIM_RECT.x1, 389.5)   # bleed pass does x>441
+    fill_rect(page, fitz.Rect(390.0, 389.4, PAGE_W, 628.8), FUNGAL_YELLOW)
+
+
+def p36_gutter(page: fitz.Page) -> None:
+    """Coral panel and green strip continue to the gutter; the dark ground and the
+    'Transcending' box run off it."""
+    # The coral panel's pixel-block ground is widened (a mirror would echo the
+    # coral itself into the gutter); the soft green strip below is mirrored.
+    stretch_extend(page, 393.0, GUTTER_EDGE, 56.0, 287.4, PAGE_W)
+    mirror_extend(page, GUTTER_EDGE, 287.4, 344.7, PAGE_W)
+    fill_rect(page, fitz.Rect(GUTTER_EDGE - 1, 344.7, PAGE_W, 629.8), FRAME_GREEN)
+    fill_rect(page, fitz.Rect(360.0, 352.5, PAGE_W, 627.0), TRANSCEND_GREY)
+    # ...and down to the frame line, so the folio sits on the box, not across its edge.
+    fill_rect(page, fitz.Rect(38.4, 605.0, PAGE_W, 627.0), TRANSCEND_GREY)
+
+
+def p38_gutter(page: fitz.Page) -> None:
+    """Fractal fills the panel to the gutter (scaled, not stretched)."""
+    cover_fit(page, fitz.Rect(38.0, 297.0, 371.5, 628.0), fitz.Rect(38.0, 297.0, PAGE_W, 628.0))
+
+
+def p21_panel(page: fitz.Page) -> None:
+    """Run the text panel out to the frame like every other text page: a 17pt
+    sliver of photo between them put the folio across an edge."""
+    fill_rect(page, fitz.Rect(392.5, 150.0, 411.4, 627.0), (1, 1, 1))
+
+
+FUNGAL_YELLOW = (0.984, 0.909, 0.452)
+FRAME_GREEN = (0.081, 0.461, 0.232)
+TRANSCEND_GREY = (0.887, 0.915, 0.88)
+
+
+# ---- chapter title cards, centred in their white boxes ------------------------------
+
+TITLE_CARDS = {
+    26: ("design pattern one", ["Network", "Infrastructure"]),
+    34: ("design pattern two", ["Fractal Nature"]),
+    44: ("design pattern three", ["Emergent", "Coordination"]),
+    52: ("design pattern four", ["Dynamic Flow"]),
+    60: ("design pattern five", ["Mutual Reciprocity"]),
+    68: ("design pattern six", ["Polycentric", "Pluralism"]),
+    74: (None, ["Join the", "Mycelial Revolution"]),
+}
+CARD_LABEL_SIZE, CARD_LABEL_INK = 15.62, (0x23 / 255, 0x1F / 255, 0x20 / 255)
+CARD_LABEL_TO_TITLE, CARD_TITLE_LEAD = 38.4, 35.0       # designer's baseline steps
+CARD_TRACKING = 0.125                                   # em, as set in InDesign
+
+
+def title_card(page: fitz.Page, fonts: Fonts, label: str | None, lines: list[str]) -> None:
+    box = next(fitz.Rect(d["rect"]) for d in page.get_drawings()
+               if d.get("fill") == (1.0, 1.0, 1.0) and d["rect"].width > 300)
+    remove_text(page, box)
+    track = CARD_TRACKING * TITLE_SIZE
+    # Baselines relative to the first line, then the whole block's ink centred.
+    rows = []
+    y = 0.0
+    if label:
+        # Set All Caps in InDesign (the text itself is lower case).
+        rows.append((label.upper(), "mono", CARD_LABEL_SIZE, 0.0, CARD_LABEL_INK, y))
+        y += CARD_LABEL_TO_TITLE
+    for i, line in enumerate(lines):
+        rows.append((line, "display", TITLE_SIZE, track, (0x19 / 255, 0x17 / 255, 0x0C / 255),
+                     y + i * CARD_TITLE_LEAD))
+    tops = [b - ink_extent(fonts.paths[f], s)[1] * sz for s, f, sz, _t, _c, b in rows]
+    bottoms = [b - ink_extent(fonts.paths[f], s)[0] * sz for s, f, sz, _t, _c, b in rows]
+    shift = (box.y0 + box.y1) / 2 - (min(tops) + max(bottoms)) / 2
+    cx = (box.x0 + box.x1) / 2
+    for s, f, sz, t, color, b in rows:
+        text(page, fonts, (cx, b + shift), s, font=f, size=sz, color=color, align="center",
+             tracking=t)
 
 
 # ---- p78: bigger QR inside the call-to-action box; FUNG what matters ---------------

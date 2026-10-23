@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 
 import fitz
 
@@ -181,3 +183,21 @@ def draw_qr(page: fitz.Page, qr, rect: fitz.Rect) -> None:
                 shape.draw_rect(fitz.Rect(x, y, x + cell + 0.05, y + cell + 0.05))
     shape.finish(fill=INK, color=None)
     shape.commit()
+
+
+@lru_cache(maxsize=None)
+def ink_extent(font_path: Path, s: str) -> tuple[float, float]:
+    """(lowest, highest) ink of ``s`` in em, from the glyph outlines."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+    font = TTFont(font_path)
+    glyphs, cmap = font.getGlyphSet(), font.getBestCmap()
+    lo = hi = 0.0
+    for ch in s:
+        if ord(ch) in cmap:
+            pen = BoundsPen(glyphs)
+            glyphs[cmap[ord(ch)]].draw(pen)
+            if pen.bounds:
+                lo, hi = min(lo, pen.bounds[1]), max(hi, pen.bounds[3])
+    upm = font["head"].unitsPerEm
+    return lo / upm, hi / upm

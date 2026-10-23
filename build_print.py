@@ -56,6 +56,13 @@ def edited_book(fonts: Fonts) -> bytes:
     edits.p25_perspectives(page(25), fonts)
     edits.p46_quadratic_funding(page(46), fonts)
     edits.p62_homage(page(62), fonts)
+    edits.p20_gutter(page(20))
+    edits.p21_panel(page(21))
+    edits.p28_gutter(page(28))
+    edits.p36_gutter(page(36))
+    edits.p38_gutter(page(38))
+    for orig, (label, lines) in edits.TITLE_CARDS.items():
+        edits.title_card(page(orig), fonts, label, lines)
     edits.p77_parting(page(77), fonts)
     edits.appendix(page(82), page(83), edits.extract_references(doc), fonts)
 
@@ -63,7 +70,7 @@ def edited_book(fonts: Fonts) -> bytes:
     print(f"  glossary: {added} pages")
     edits.folios(doc, fonts)
     extended = sum(bleed.extend_bleed(p) for p in doc)
-    print(f"  bleed: extended {extended} trim-only pages")
+    print(f"  bleed: mirrored trim edges into the bleed on {extended} pages")
     if (doc.page_count - edits.DROPPED) % 2:     # even page count; no folio on the blank
         blank_page(doc)
     doc.delete_pages(list(range(edits.DROPPED)))

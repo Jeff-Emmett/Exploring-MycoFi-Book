@@ -23,40 +23,40 @@ def _render(page: fitz.Page, r: fitz.Rect) -> Image.Image:
     return Image.frombytes("RGB", (pm.width, pm.height), pm.samples)
 
 
-def _needs_bleed(page: fitz.Page) -> bool:
-    """True when the bleed ring is blank but the trim edge carries ink."""
-    t, b = TRIM_RECT, BLEED
-    pm = page.get_pixmap(dpi=36)
+def _has_ink(page: fitz.Page, r: fitz.Rect) -> bool:
+    # Probe 2pt inside ``r``: a 9pt strip rounds to whole pixels and would
+    # otherwise pick up a row of the neighbouring area.
+    pm = page.get_pixmap(dpi=72, clip=r + (2, 2, -2, -2))
     a = np.frombuffer(pm.samples, np.uint8).reshape(pm.height, pm.width, pm.n)[..., :3]
-    k = 36 / 72
-    o, x0, x1, y0, y1 = int(b * k), int(t.x0 * k), int(t.x1 * k), int(t.y0 * k), int(t.y1 * k)
-    ring = np.concatenate([a[:o].reshape(-1, 3), a[-o:].reshape(-1, 3),
-                           a[:, :o].reshape(-1, 3), a[:, -o:].reshape(-1, 3)])
-    edge = np.concatenate([a[y0:y0 + 2].reshape(-1, 3), a[y1 - 2:y1].reshape(-1, 3),
-                           a[:, x0:x0 + 2].reshape(-1, 3), a[:, x1 - 2:x1].reshape(-1, 3)])
-    return (ring.min(1) > 245).mean() > 0.9 and (edge.min(1) < 245).mean() > 0.05
+    return bool((a.min(2) < 240).any())
 
 
 def extend_bleed(page: fitz.Page) -> bool:
-    if not _needs_bleed(page):
-        return False
+    """Mirror every trim edge that carries any ink into its bleed. Where the bleed
+    is already painted (the glossary, art run off the gutter) the mirror matches
+    what is there, so no edge needs a separate test."""
     t, b = TRIM_RECT, BLEED
     flip_h, flip_v = Image.Transpose.FLIP_LEFT_RIGHT, Image.Transpose.FLIP_TOP_BOTTOM
-    pieces = [
+    sides = [   # (inside strip, bleed strip, flips)
         (fitz.Rect(t.x0, t.y0, t.x1, t.y0 + b), fitz.Rect(t.x0, 0, t.x1, t.y0), (flip_v,)),
         (fitz.Rect(t.x0, t.y1 - b, t.x1, t.y1), fitz.Rect(t.x0, t.y1, t.x1, t.y1 + b), (flip_v,)),
         (fitz.Rect(t.x0, t.y0, t.x0 + b, t.y1), fitz.Rect(0, t.y0, t.x0, t.y1), (flip_h,)),
         (fitz.Rect(t.x1 - b, t.y0, t.x1, t.y1), fitz.Rect(t.x1, t.y0, t.x1 + b, t.y1), (flip_h,)),
     ]
+    pieces = [(src, dst, f) for src, dst, f in sides if _has_ink(page, src)]
+    if not pieces:
+        return False
     for cx, dx in ((t.x0, -b), (t.x1 - b, b)):          # corners: mirror both ways
         for cy, dy in ((t.y0, -b), (t.y1 - b, b)):
             src = fitz.Rect(cx, cy, cx + b, cy + b)
-            pieces.append((src, src + (dx, dy, dx, dy), (flip_h, flip_v)))
+            dst = src + (dx, dy, dx, dy)
+            if _has_ink(page, src):
+                pieces.append((src, dst, (flip_h, flip_v)))
     for src, dst, flips in pieces:
         img = _render(page, src)
         for f in flips:
             img = img.transpose(f)
         buf = io.BytesIO()
         img.save(buf, "PNG")
-        page.insert_image(dst, stream=buf.getvalue())
+        page.insert_image(dst, stream=buf.getvalue(), keep_proportion=False)
     return True
