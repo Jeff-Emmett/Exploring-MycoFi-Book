@@ -8,6 +8,7 @@ cover must be rebuilt whenever the interior page count changes.
 from __future__ import annotations
 
 import io
+import math
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from PIL import Image, ImageFilter
 
 from .fonts import Fonts
 from .geometry import BLEED, PT_PER_IN, TRIM_H, TRIM_W
-from .layout import (Run, draw_lines, draw_qr, ink_extent as _ink, remove_text,
+from .layout import (Run, draw_lines, ink_extent as _ink, remove_text,
                      rounded_rect, text, wrap)
 
 REPO = Path(__file__).resolve().parent.parent
@@ -35,6 +36,7 @@ SPINE_CLEAR = {"kdp": 0.0625, "lulu": 0.125}
 MIN_SPINE_TYPE = 4.5        # pt of ink; below this the spine stays blank
 TITLE_ART_GAP = 8.0                 # pt between the title's ink and the mushroom art
 TITLE_LINE_GAP = 2.0                # pt between "Exploring" descenders and "MycoFi"
+MYCOFI_DROP = 4.0                   # extra air above "MycoFi" (author's request)
 
 BG = (0.13141070306301117, 0.11682306975126266, 0.11407645046710968)
 TITLE_YELLOW = (0xFB / 255, 0xEA / 255, 0x6A / 255)
@@ -70,8 +72,9 @@ ENDORSEMENTS = [
      "Amber Case, author of Calm Technology"),
 ]
 BUY_IT_FORWARD = "https://mycofi.earth/buy-it-forward"
-BUY_IT_FORWARD_NOTE = ("Want to see these ideas myceliate? Buy-it-forward to provide a book "
-                       "to disseminate to the network.")
+BUY_IT_FORWARD_NOTE = ("Want to help these ideas myceliate? Buy-it-forward to disseminate a "
+                       "book to the network!")
+CAP_PINK = (0.94, 0.43, 0.48)
 
 
 
@@ -147,12 +150,64 @@ def _fit_title(fonts: Fonts, art: np.ndarray, x_left: float, x_right: float, y_t
         b2_ref = b1 + 0.5 * size
         line2 = _text_mask(fonts, size, "MycoFi", x2, b2_ref, w, h)
         for dy in range(0, round(0.8 * size)):          # tightest leading that clears line 1
-            moved = _shift_down(line2, dy)
-            if not (moved & line1).any():
+            if not (_shift_down(line2, dy) & line1).any():
                 break
-        if not (moved & keep_out).any():
+        dy += round(MYCOFI_DROP)
+        if not (_shift_down(line2, dy) & keep_out).any():
             return float(size), b1, x2, b2_ref + dy
     raise SystemExit("cover title: no size fits above the art")
+
+
+def draw_spore_qr(page: fitz.Page, data: str, rect: fitz.Rect, ink=(0.10, 0.09, 0.05)) -> None:
+    """QR code drawn as spore dots with soft-cornered finder eyes and a mushroom in
+    the middle. Error correction H (30%) pays for the centre; the eyes, timing and
+    format areas keep their full shape so scanners lock on as usual."""
+    qr = segno.make(data, error="h")
+    m = [list(row) for row in qr.matrix]
+    n = len(m)
+    c = rect.width / n
+    eyes = [(0, 0), (0, n - 7), (n - 7, 0)]
+    mid = n // 2
+    hole = 4                                        # 9x9 modules cleared (5.9% of the code)
+
+    def in_eye(r, col):
+        return any(er <= r < er + 7 and ec <= col < ec + 7 for er, ec in eyes)
+
+    shape = page.new_shape()
+    for r in range(n):
+        for col in range(n):
+            if not m[r][col] or in_eye(r, col):
+                continue
+            if abs(r - mid) <= hole and abs(col - mid) <= hole:
+                continue
+            centre = fitz.Point(rect.x0 + (col + 0.5) * c, rect.y0 + (r + 0.5) * c)
+            shape.draw_circle(centre, c * 0.47)
+    shape.finish(fill=ink, color=None)
+    for er, ec in eyes:
+        x, y = rect.x0 + ec * c, rect.y0 + er * c
+        outer = fitz.Rect(x, y, x + 7 * c, y + 7 * c)
+        shape.draw_rect(outer, radius=0.28)
+        shape.draw_rect(outer + (c, c, -c, -c), radius=0.22)
+        shape.finish(fill=ink, color=None, even_odd=True)
+        shape.draw_rect(outer + (2 * c, 2 * c, -2 * c, -2 * c), radius=0.35)
+        shape.finish(fill=ink, color=None)
+    shape.commit()
+
+    # The mushroom: pink cap with spore spots on an ink stem.
+    cx, cy = rect.x0 + (mid + 0.5) * c, rect.y0 + (mid + 0.5) * c
+    s = (2 * hole + 1) * c * 0.8                    # glyph box, inside the cleared hole
+    shape = page.new_shape()
+    stem = fitz.Rect(cx - s * 0.13, cy - s * 0.05, cx + s * 0.13, cy + s * 0.46)
+    shape.draw_rect(stem, radius=0.4)
+    shape.finish(fill=ink, color=None)
+    cap = [fitz.Point(cx + s * 0.5 * math.cos(t), cy + s * 0.08 - s * 0.5 * math.sin(t))
+           for t in [math.pi * k / 24 for k in range(25)]]
+    shape.draw_polyline(cap)
+    shape.finish(fill=CAP_PINK, color=None, closePath=True)
+    for dx, dy, rr in ((-0.22, -0.12, 0.07), (0.05, -0.27, 0.06), (0.25, -0.08, 0.055)):
+        shape.draw_circle(fitz.Point(cx + dx * s, cy + dy * s), rr * s)
+    shape.finish(fill=(1, 1, 1), color=None)
+    shape.commit()
 
 
 @lru_cache(maxsize=None)
@@ -227,9 +282,9 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     right = front.x1 - BLEED - SAFE
     for i, name in enumerate(("Jeff Emmett", "Jessica Zartler")):
         text(page, fonts, (right, H - BLEED - SAFE - 56 + i * 27), name, font="display",
-             size=23, color=TITLE_YELLOW, align="right", word_space=2.4)
+             size=21, color=TITLE_YELLOW, align="right", word_space=2.2)
     text(page, fonts, (right, H - BLEED - SAFE - 4), "Foreword by Scott Morris",
-         font="display", size=10, color=TITLE_YELLOW, align="right", word_space=1.2)
+         font="display", size=11, color=TITLE_YELLOW, align="right", word_space=1.3)
 
     # ---- spine ----
     if spine_title is None:
@@ -253,8 +308,8 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     # ---- back ----
     bx0, bx1 = BLEED + SAFE, BLEED + TRIM_W - SAFE
     width = bx1 - bx0
-    pad = 16.0
-    size, lead = 9.5, 13.4
+    pad = 13.0
+    size, lead = 9.5, 13.1
     inner = width - 2 * pad
     blurb = wrap([Run(BLURB_LEAD, "medium"), Run(BLURB_REST)], fonts, size, inner)
     intro = wrap([Run(PATTERNS_INTRO, "medium")], fonts, size, inner)
@@ -283,7 +338,7 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         blocks.append((wrap([Run(q)], fonts, qsize, inner), who))
     eh = (2 * pad + qsize * 0.75
           + sum(len(ls) * qlead for ls, _ in blocks) + (len(blocks) - 1) * (qlead + 8))
-    ey = y_box + box_h + 12
+    ey = y_box + box_h + 9
     rounded_rect(page, fitz.Rect(bx0, ey, bx1, ey + eh), 12, fill=BOX_PINK)
     y = ey + pad + qsize
     for lines, who in blocks:
@@ -295,27 +350,37 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     # printer's ISBN barcode: KDP and Lulu both stamp their own there.
     barcode_zone = fitz.Rect(BLEED + TRIM_W - 18 - 144, H - BLEED - 18 - 86.4,
                              BLEED + TRIM_W - 18, H - BLEED - 18)
-    # Laid out bottom-up: the note bubble on the safe line, the QR card above it.
-    note_size, note_lead, note_pad = 8.0, 10.6, 7.0
-    note_w = barcode_zone.x0 - 10 - bx0
-    note = wrap([Run(BUY_IT_FORWARD_NOTE, "medium")], fonts, note_size, note_w - 2 * note_pad)
-    note_h = (len(note) - 1) * note_lead + note_size * 0.95 + 2 * note_pad
-    bubble = fitz.Rect(bx0, H - BLEED - SAFE + 4 - note_h, bx0 + note_w, H - BLEED - SAFE + 4)
-    q_side = 92.0
-    qr_bg = fitz.Rect(bx0, bubble.y0 - 8 - (q_side + 22), bx0 + q_side + 16, bubble.y0 - 8)
+    # Laid out bottom-up: the QR card on the safe line, a speech bubble of the same
+    # width above it, its tail pointing down at the code.
+    q_side = 84.0
+    qr_bg = fitz.Rect(bx0, H - BLEED - SAFE + 6 - (q_side + 22), bx0 + q_side + 16,
+                      H - BLEED - SAFE + 6)
     q_bottom = qr_bg.y0 + 8 + q_side
     rounded_rect(page, qr_bg, 8, fill=(1, 1, 1))
-    draw_qr(page, segno.make(BUY_IT_FORWARD, error="m"),
-            fitz.Rect(bx0 + 8, q_bottom - q_side, bx0 + 8 + q_side, q_bottom))
+    draw_spore_qr(page, BUY_IT_FORWARD, fitz.Rect(bx0 + 8, q_bottom - q_side, bx0 + 8 + q_side,
+                                                  q_bottom))
     text(page, fonts, (qr_bg.x0 + qr_bg.width / 2, q_bottom + 9), "mycofi.earth/buy-it-forward",
          font="medium", size=6.2, align="center")
-    rounded_rect(page, bubble, 10, fill=BOX_YELLOW)
+    note_size, note_lead, note_pad, tail = 7.6, 9.4, 6.5, 5.5
+    note = wrap([Run(BUY_IT_FORWARD_NOTE, "medium")], fonts, note_size,
+                qr_bg.width - 2 * note_pad)
+    note_h = (len(note) - 1) * note_lead + note_size * 0.95 + 2 * note_pad
+    bubble = fitz.Rect(qr_bg.x0, qr_bg.y0 - tail - 3 - note_h, qr_bg.x1, qr_bg.y0 - tail - 3)
+    rounded_rect(page, bubble, 9, fill=BOX_YELLOW)
+    tip = fitz.Point(bubble.x0 + bubble.width / 2, bubble.y1 + tail)
+    shape = page.new_shape()
+    shape.draw_polyline([fitz.Point(tip.x - tail, bubble.y1 - 0.5), tip,
+                         fitz.Point(tip.x + tail, bubble.y1 - 0.5)])
+    shape.finish(fill=BOX_YELLOW, color=None, closePath=True)
+    shape.commit()
     draw_lines(page, note, fonts, note_size, bubble.x0 + note_pad,
-               bubble.y0 + note_pad + note_size * 0.75, note_lead)
-    if bubble.intersects(barcode_zone):
-        raise SystemExit("buy-it-forward note runs into the barcode area")
-    if qr_bg.y0 < ey + eh + 6:
-        raise SystemExit(f"back cover copy overruns the QR band (ends {ey + eh:.0f})")
+               bubble.y0 + note_pad + note_size * 0.75, note_lead, width=bubble.width - 2 * note_pad,
+               align="center")
+    if bubble.y0 < ey + eh + 6:
+        raise SystemExit(f"back cover copy overruns the QR band (ends {ey + eh:.0f}, "
+                         f"bubble starts {bubble.y0:.0f})")
+    if qr_bg.intersects(barcode_zone):
+        raise SystemExit("QR card runs into the barcode area")
 
     page.set_trimbox(fitz.Rect(BLEED, BLEED, W - BLEED, H - BLEED))
     if platform == "lulu":
