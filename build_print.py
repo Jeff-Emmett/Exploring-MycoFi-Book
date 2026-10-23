@@ -23,7 +23,7 @@ from pathlib import Path
 import fitz
 import pikepdf
 
-from mycofi_print import checks, cover, edits, pdffix
+from mycofi_print import bleed, checks, cover, edits, pdffix
 from mycofi_print.fonts import BASE_PDF, Fonts
 from mycofi_print.geometry import BLEED, PT_PER_IN, TRIM_H, TRIM_W, blank_page
 from mycofi_print.glossary import append_glossary
@@ -55,12 +55,15 @@ def edited_book(fonts: Fonts) -> bytes:
     edits.p13_note(page(13), fonts)
     edits.p25_perspectives(page(25), fonts)
     edits.p46_quadratic_funding(page(46), fonts)
+    edits.p62_homage(page(62), fonts)
     edits.p77_parting(page(77), fonts)
     edits.appendix(page(82), page(83), edits.extract_references(doc), fonts)
 
     added = append_glossary(doc, fonts)
     print(f"  glossary: {added} pages")
     edits.folios(doc, fonts)
+    extended = sum(bleed.extend_bleed(p) for p in doc)
+    print(f"  bleed: extended {extended} trim-only pages")
     if (doc.page_count - edits.DROPPED) % 2:     # even page count; no folio on the blank
         blank_page(doc)
     doc.delete_pages(list(range(edits.DROPPED)))
@@ -104,9 +107,9 @@ def main() -> int:
     ap.add_argument("--isbn-lulu")
     ap.add_argument("--paper", default="standard-color", choices=sorted(cover.KDP_PER_PAGE),
                     help="KDP paper (sets the spine width)")
-    ap.add_argument("--spine-clear", type=float, default=cover.SPINE_CLEAR,
-                    help="spine text to spine edge, inches (printers recommend "
-                         f"KDP {cover.KDP_SPINE_CLEAR}, Lulu {cover.LULU_SPINE_CLEAR})")
+    ap.add_argument("--spine-clear", type=float, default=None,
+                    help="spine text to spine edge, inches (default: the printer's "
+                         f"recommendation, {cover.SPINE_CLEAR})")
     args = ap.parse_args()
 
     fonts = Fonts()

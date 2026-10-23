@@ -29,6 +29,7 @@ LINKS = Path(os.environ.get("MYCOFI_LINKS",
                             "/mnt/c/Users/jeffe/Downloads/BOOK_Mycofi Pages_Full_Draft/Links"))
 LIG = {"ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl"}
 
+DISOBEY = Path(__file__).resolve().parent.parent / "source" / "images" / "disobey-mushroom.png"
 TEAL = (0.0800640881061554, 0.424826443195343, 0.46405738592147827)
 SPORE_YELLOW = (0.992, 0.906, 0.627)
 
@@ -52,16 +53,17 @@ def clean(s: str) -> str:
 # ---- folios ------------------------------------------------------------------
 
 FOLIO_SIZE = 7.81
-FOLIO_INSET = 46.0        # pill centre, pt from the outside and bottom trim (0.64"),
-                          # clear of the 0.42" coloured frame
-FOLIO_LOW = 23.0          # fallback when body text reaches the corner: on the frame
-                          # band, still 0.28" inside the trim (KDP needs 0.25")
+FOLIO_INSET = 46.0        # pill centre from the outside trim (0.64")
+FOLIO_RISE = 23.0         # pill centre above the bottom trim: inside the 0.42" frame
+                          # band on every page (so it never straddles the art) and
+                          # 0.28" clear of the trim (KDP needs 0.25")
 
 
 def folios(doc: fitz.Document, fonts: Fonts) -> None:
     """Replace every folio: renumber to the printed page, lift it clear of the
     trim (KDP wants text >= 0.25" inside the trim; the old folios sat at 0.21")
-    and sit it on a light pill so it reads on any background colour."""
+    and sit it on a light pill so it reads on any frame colour. Same height on
+    every page."""
     for i, page in enumerate(doc):
         orig = i + 1
         rects = []
@@ -77,13 +79,10 @@ def folios(doc: fitz.Document, fonts: Fonts) -> None:
         label = str(phys(orig))
         w = fonts["mono"].text_length(label, FOLIO_SIZE)
         cx = TRIM_RECT.x1 - FOLIO_INSET if recto(orig) else TRIM_RECT.x0 + FOLIO_INSET
-        words = [fitz.Rect(b[:4]) for b in page.get_text("words")]
-        for cy in (TRIM_RECT.y1 - FOLIO_INSET, TRIM_RECT.y1 - FOLIO_LOW):
-            pill = fitz.Rect(cx - w / 2 - 5, cy - 6, cx + w / 2 + 5, cy + 6)
-            if not any(pill.intersects(r) for r in words):
-                break
-        else:
-            raise SystemExit(f"orig p{orig}: no clear spot for the folio")
+        cy = TRIM_RECT.y1 - FOLIO_RISE
+        pill = fitz.Rect(cx - w / 2 - 5, cy - 6, cx + w / 2 + 5, cy + 6)
+        if any(pill.intersects(fitz.Rect(b[:4])) for b in page.get_text("words")):
+            raise SystemExit(f"orig p{orig}: text runs into the folio")
         rounded_rect(page, pill, 6, fill=(1, 1, 1), opacity=0.85)
         text(page, fonts, (cx, cy + 2.6), label, font="mono", size=FOLIO_SIZE, align="center")
 
@@ -364,6 +363,82 @@ def p77_parting(page: fitz.Page, fonts: Fonts) -> None:
                align="center")
 
 
+# ---- p62: "An homage to Indigenous Economics", full width, at body size ------------
+
+POPOUT_PINK = (0.939, 0.426, 0.479)            # same as the page frame
+POPOUT_CREAM = (0.996, 0.932, 0.926)
+HOMAGE = [
+    ("body", "Indigenous Economics" + sup(31) + " is a field of economic study that explores "
+     "the resource management practices, theories, and philosophies of indigenous peoples "
+     "around the globe and throughout history. It builds on the communal values of "
+     "multigenerational thinking, ecological sustainability, and our intricate connection "
+     "with the environment. This approach recognizes the importance of maintaining the "
+     "interconnection and relations between all living things - an economy beyond tokens of "
+     "value and quantification."),
+    ("belt", None),
+    ("medium_italic", "The Hiawatha Belt of the Haudenosaunee Nation - since fashioned into a "
+     "flag - carries deep meaning and significance. The wampum belt also functioned as a "
+     "ledger recording the founding of the Haudenosaunee Confederacy, when five warring "
+     "nations buried their weapons of war to live in peace." + sup(32)),
+    ("body", "Given that animals branched off from fungi in the evolutionary tree of life, "
+     "mushrooms are one of our closest genetic ancestors, and thus also a part of our "
+     "indigenous heritage. As with many other topics in this book, there is much more to "
+     "explore on the deep wisdom of Indigenous Economics. Our intention in bringing this up "
+     "here is to show gratitude and respect to indigenous peoples and elders for stewarding "
+     "this wisdom."),
+    ("body", "MycoFi sees Indigenous Economics and asks: how can we re-root economics in the "
+     "health and wealth of our planet and all living beings?"),
+]
+
+
+def p62_homage(page: fitz.Page, fonts: Fonts) -> None:
+    """Widen the pop-out to the gutter and end it on the frame line (it used to
+    run into the bottom band under the folio); body text at book size, bigger belt."""
+    belt = next(im for im in page.get_image_info(xrefs=True) if im["width"] == 642)
+    belt_xref, belt_aspect = belt["xref"], belt["width"] / belt["height"]
+    remove_text(page, fitz.Rect(40, 165, 420, 620))
+    remove_images(page, fitz.Rect(belt["bbox"]))
+    # Tab bleeds off the gutter and runs down through the same-pink frame band
+    # (stopping at the band line left the old white panel's edge showing).
+    rounded_rect(page, fitz.Rect(35.4, 161.8, PAGE_W + 20, PAGE_H + 20), 12, fill=POPOUT_PINK)
+    label = "AN HOMAGE TO INDIGENOUS ECONOMICS"
+    natural = fonts["display_italic"].text_length(label, 9.76)
+    text(page, fonts, (56.0, 179.4), label, font="display_italic", size=9.76,
+         tracking=(251.3 - natural) / (len(label) - 1))     # designer's span: 56.0-307.3
+    box = fitz.Rect(46.2, 189.0, 404.0, 620.0)
+    fill_rect(page, box, POPOUT_CREAM)
+
+    x, width = 56.0, box.x1 - 10 - 56.0
+    lead, cap_size, cap_lead, gap = 12.0, 8.3, 11.0, 8.0     # body size, a touch tighter
+
+    def layout(belt_w):
+        items, y = [], 206.0
+        for kind, body in HOMAGE:
+            if kind == "belt":
+                h = belt_w / belt_aspect
+                items.append(("belt", y - BODY_SIZE + 4, h))
+                y += h + gap + 2
+                continue
+            size, ld = (cap_size, cap_lead) if kind != "body" else (BODY_SIZE, lead)
+            lines = wrap([Run(body, kind)], fonts, size, width)
+            items.append(("text", y, (lines, size, ld)))
+            y += len(lines) * ld + gap
+        return items, y - lead - gap
+
+    belt_w = width
+    while (res := layout(belt_w))[1] > box.y1 - 10:
+        belt_w -= 4
+        if belt_w < 302:                     # never smaller than the designer's
+            raise SystemExit("p62 homage no longer fits its box")
+    for kind, y, data in res[0]:
+        if kind == "belt":
+            bx = x + (width - belt_w) / 2
+            page.insert_image(fitz.Rect(bx, y, bx + belt_w, y + data), xref=belt_xref)
+        else:
+            lines, size, ld = data
+            draw_lines(page, lines, fonts, size, x, y, ld)
+
+
 # ---- p78: bigger QR inside the call-to-action box; FUNG what matters ---------------
 
 def _fung_sticker(page: fitz.Page) -> None:
@@ -387,7 +462,6 @@ def p78_rooted(doc: fitz.Document, orig_index: int, fonts: Fonts) -> None:
     src.insert_pdf(doc, from_page=orig_index, to_page=orig_index)
     _fung_sticker(src[0])
     sticker_src = fitz.Rect(60, 209, 275, 395)
-    cat_src = fitz.Rect(297, 270, 416, 380)
 
     page = doc[orig_index]
     # Clear everything under the intro paragraph back to the white panel.
@@ -407,15 +481,19 @@ def p78_rooted(doc: fitz.Document, orig_index: int, fonts: Fonts) -> None:
          color=LINK_GREEN)
     text(page, fonts, (box.x0 + 16, y + 34), "scan to find us →", size=7.81)
 
-    # Sticker and the mushroom friend, side by side, tighter.
+    # Sticker and the DISOBEY mushroom (2026; replaces the cat-mushroom), side by side.
     s_w = 176.0
     s_h = s_w * sticker_src.height / sticker_src.width
     sticker_dst = fitz.Rect(64, 274, 64 + s_w, 274 + s_h)
     page.show_pdf_page(sticker_dst, src, 0, clip=sticker_src)
-    c_w = 104.0
-    c_h = c_w * cat_src.height / cat_src.width
-    cat_dst = fitz.Rect(268, 274 + (s_h - c_h) / 2, 268 + c_w, 274 + (s_h - c_h) / 2 + c_h)
-    page.show_pdf_page(cat_dst, src, 0, clip=cat_src)
+    slot = fitz.Rect(sticker_dst.x1 + 14, sticker_dst.y0, 394, sticker_dst.y1)
+    with Image.open(DISOBEY) as im:
+        aspect = im.width / im.height
+    d_h = min(slot.height, slot.width / aspect)
+    d_w = d_h * aspect
+    page.insert_image(fitz.Rect(slot.x0 + (slot.width - d_w) / 2, slot.y0 + (slot.height - d_h) / 2,
+                                slot.x0 + (slot.width + d_w) / 2, slot.y0 + (slot.height + d_h) / 2),
+                      filename=str(DISOBEY))
 
     # Meme, from the high-res original, resampled to 400 ppi at its placed size.
     meme = Image.open(LINKS / "always has been - high res.png").convert("RGB")

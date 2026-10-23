@@ -28,12 +28,10 @@ SAFE = 36.0                         # 0.5" — Lulu's safety margin; KDP needs l
 # Spine thickness per page, inches. KDP: kdp.amazon.com/help/topic/G201953020.
 KDP_PER_PAGE = {"standard-color": 0.002252, "premium-color": 0.002347,
                 "bw-white": 0.002252, "bw-cream": 0.0025}
-# Spine text to spine edge, inches. The printers ask for 0.0625 (KDP) and 0.125
-# (Lulu) to absorb fold drift; the author chose the largest type the spine holds,
-# so only a hair of clearance is kept by default (see build(spine_clear=)).
-KDP_SPINE_CLEAR = 0.0625
-LULU_SPINE_CLEAR = 0.125
-SPINE_CLEAR = 0.02
+# Spine text to spine edge, inches, as each printer recommends to absorb fold
+# drift (KDP: 0.0625; Lulu Book Creation Guide p.17: 0.125).
+SPINE_CLEAR = {"kdp": 0.0625, "lulu": 0.125}
+MIN_SPINE_TYPE = 4.5        # pt of ink; below this the spine stays blank
 TITLE_ART_GAP = 8.0                 # pt between the title's ink and the mushroom art
 TITLE_LINE_GAP = 2.0                # pt between "Exploring" descenders and "MycoFi"
 
@@ -210,9 +208,9 @@ def _art(page_index: int) -> fitz.Document:
 
 
 def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "standard-color",
-          spine_title: bool | None = None, spine_clear: float = SPINE_CLEAR) -> dict:
+          spine_title: bool | None = None, spine_clear: float | None = None) -> dict:
     spine = spine_inches(platform, pages, paper) * PT_PER_IN
-    clear = spine_clear * PT_PER_IN
+    clear = (SPINE_CLEAR[platform] if spine_clear is None else spine_clear) * PT_PER_IN
     W, H = 2 * (BLEED + TRIM_W) + spine, TRIM_H + 2 * BLEED
     doc = fitz.open()
     page = doc.new_page(width=W, height=H)
@@ -252,7 +250,7 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
 
     # ---- spine ----
     if spine_title is None:
-        spine_title = (spine - 2 * clear) >= 4.5 and pages > 80
+        spine_title = (spine - 2 * clear) >= MIN_SPINE_TYPE and pages > 80
     if spine_title:
         # Both lines are sized so their ink fills the spine minus ``clear`` on each
         # side; the author line has no descenders, so it is capped below the title
