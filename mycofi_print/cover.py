@@ -72,8 +72,8 @@ ENDORSEMENTS = [
      "Amber Case, author of Calm Technology"),
 ]
 BUY_IT_FORWARD = "https://mycofi.earth/buy-it-forward"
-BUY_IT_FORWARD_NOTE = ("Want to help these ideas myceliate? Buy-it-forward to disseminate a "
-                       "book to the network!")
+BUY_IT_FORWARD_NOTE = ("Want to help these ideas myceliate? Buy-it-forward or subscribe to "
+                       "fund a copy for the network!")
 CAP_PINK = (0.94, 0.43, 0.48)
 
 
