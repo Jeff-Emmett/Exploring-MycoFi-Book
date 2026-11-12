@@ -34,6 +34,8 @@ KDP_PER_PAGE = {"standard-color": 0.002252, "premium-color": 0.002347,
 # drift (KDP: 0.0625; Lulu Book Creation Guide p.17: 0.125).
 SPINE_CLEAR = {"kdp": 0.0625, "lulu": 0.125}
 MIN_SPINE_TYPE = 4.5        # pt of ink; below this the spine stays blank
+SPINE_TRACK = 0.12          # em added after every spine letter (legibility at ~7pt)
+SPINE_WORD = 0.6            # em added to each spine word space
 TITLE_ART_GAP = 8.0                 # pt between the title's ink and the mushroom art
 TITLE_LINE_GAP = 2.0                # pt between "Exploring" descenders and "MycoFi"
 MYCOFI_DROP = 4.0                   # extra air above "MycoFi" (author's request)
@@ -90,15 +92,24 @@ def spine_inches(platform: str, pages: int, paper: str = "standard-color") -> fl
 BOX_FILLS = ([0.019989, 0.0400085, 0.710938, 0], [0, 0.129883, 0.0100098, 0])
 
 
+def _spine_len(fonts: Fonts, s: str, font: str, size: float) -> float:
+    return (fonts[font].text_length(s, size) + SPINE_TRACK * size * (len(s) - 1)
+            + SPINE_WORD * size * s.count(" "))
+
+
 def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, cx: float,
                 y: float, color, from_top: bool) -> None:
-    """Spine text reading top-to-bottom (letter tops toward the front cover), ink
-    centred on ``cx``; starts at ``y`` if ``from_top`` else ends there."""
+    """Letterspaced spine text reading top-to-bottom (letter tops toward the front
+    cover), ink centred on ``cx``; starts at ``y`` if ``from_top`` else ends there."""
     lo, hi = _ink(fonts.paths[font], s)
     baseline_x = cx - (lo + hi) / 2 * size
-    y0 = y if from_top else y - fonts[font].text_length(s, size)
+    y0 = y if from_top else y - _spine_len(fonts, s, font, size)
+    f = fonts[font]
     w = fitz.TextWriter(page.rect)
-    w.append((baseline_x, y0), s, font=fonts[font], fontsize=size)
+    x = baseline_x
+    for ch in s:
+        w.append((x, y0), ch, font=f, fontsize=size)
+        x += f.text_length(ch, size) + SPINE_TRACK * size + (SPINE_WORD * size if ch == " " else 0)
     w.write_text(page, color=color, morph=(fitz.Point(baseline_x, y0), fitz.Matrix(-90)))
 
 
@@ -292,9 +303,9 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     if spine_title:
         # Both lines are set in caps (no descenders, so the letters are as tall as
         # the spine allows) and sized so their ink fills the spine minus ``clear``
-        # on each side; colour, not size, separates title from authors. The title
-        # is centred on the spine's length; the authors end at the 0.5" safe
-        # distance from the foot trim.
+        # on each side; colour, not size, separates title from authors. Both are
+        # letterspaced. The title is centred a third of the way down; the authors
+        # end at the 0.5" safe distance from the foot trim.
         avail = spine - 2 * clear
         cx = spine_r.x0 + spine / 2
         end_inset = BLEED + SAFE
@@ -303,8 +314,8 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         t_size = avail / (hi - lo)
         lo, hi = _ink(fonts.paths["display"], authors)
         a_size = min(avail / (hi - lo), t_size)
-        t_len = fonts["display"].text_length(title, t_size)
-        _spine_line(page, fonts, title, "display", t_size, cx, (H - t_len) / 2,
+        t_len = _spine_len(fonts, title, "display", t_size)
+        _spine_line(page, fonts, title, "display", t_size, cx, H / 3 - t_len / 2,
                     TITLE_YELLOW, True)
         _spine_line(page, fonts, authors, "display", a_size, cx, H - end_inset, SUB_PINK, False)
 
