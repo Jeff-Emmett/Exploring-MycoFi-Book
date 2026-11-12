@@ -136,6 +136,13 @@ def main() -> int:
                                spine_clear=args.spine_clear)
             print(f"  {cov.name}: {info['width_in']:.4f}x{info['height_in']:.4f}in, "
                   f"spine {info['spine_in']:.4f}in, spine title: {info['spine_title']}")
+            if platform == "lulu":
+                # Alternate Lulu cover with spine text at KDP's tighter 0.0625" clearance
+                # (Lulu's own 0.125" leaves no room on an 86 pp spine).
+                alt = OUT_DIR / "ExploringMycoFi_cover_lulu_spine.pdf"
+                cover.build(platform, pages, alt, fonts, paper=args.paper,
+                            spine_title=True, spine_clear=cover.SPINE_CLEAR["kdp"])
+                print(f"  {alt.name}: spine title at {cover.SPINE_CLEAR['kdp']}in clearance")
         else:
             add_covers(out, fonts, pages)
     return 0

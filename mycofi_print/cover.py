@@ -290,19 +290,22 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     if spine_title is None:
         spine_title = (spine - 2 * clear) >= MIN_SPINE_TYPE and pages > 80
     if spine_title:
-        # Both lines are sized so their ink fills the spine minus ``clear`` on each
-        # side; the author line has no descenders, so it is capped below the title
-        # to keep the hierarchy. Each line keeps the 0.5" safe distance from the
-        # head and foot trim.
+        # Both lines are set in caps (no descenders, so the letters are as tall as
+        # the spine allows) and sized so their ink fills the spine minus ``clear``
+        # on each side; colour, not size, separates title from authors. The title
+        # is centred on the spine's length; the authors end at the 0.5" safe
+        # distance from the foot trim.
         avail = spine - 2 * clear
         cx = spine_r.x0 + spine / 2
         end_inset = BLEED + SAFE
-        title, authors = "Exploring MycoFi", "Emmett & Zartler"
+        title, authors = "EXPLORING MYCOFI", "JEFF EMMETT & JESSICA ZARTLER"
         lo, hi = _ink(fonts.paths["display"], title)
         t_size = avail / (hi - lo)
         lo, hi = _ink(fonts.paths["display"], authors)
-        a_size = min(avail / (hi - lo), t_size * 0.85)
-        _spine_line(page, fonts, title, "display", t_size, cx, end_inset, TITLE_YELLOW, True)
+        a_size = min(avail / (hi - lo), t_size)
+        t_len = fonts["display"].text_length(title, t_size)
+        _spine_line(page, fonts, title, "display", t_size, cx, (H - t_len) / 2,
+                    TITLE_YELLOW, True)
         _spine_line(page, fonts, authors, "display", a_size, cx, H - end_inset, SUB_PINK, False)
 
     # ---- back ----
