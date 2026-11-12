@@ -33,6 +33,7 @@ KDP_PER_PAGE = {"standard-color": 0.002252, "premium-color": 0.002347,
 # Spine text to spine edge, inches, as each printer recommends to absorb fold
 # drift (KDP: 0.0625; Lulu Book Creation Guide p.17: 0.125).
 SPINE_CLEAR = {"kdp": 0.0625, "lulu": 0.125}
+ART_DPI = 300                 # flattened cover art (designer tiles are ~150 ppi)
 MIN_SPINE_TYPE = 4.5        # pt of ink; below this the spine stays blank
 SPINE_TRACK = 0.12          # em added after every spine letter (legibility at ~7pt)
 SPINE_WORD = 0.6            # em added to each spine word space
@@ -275,16 +276,24 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     back = fitz.Rect(0, 0, BLEED + TRIM_W, H)
     spine_r = fitz.Rect(back.x1, 0, back.x1 + spine, H)
     front = fitz.Rect(spine_r.x1, 0, W, H)
-    page.draw_rect(page.rect, color=None, fill=BG)
-
-    # Art, scaled to the panel height and cropped on the spine side.
+    # Background: ground fill plus each panel's art, scaled to the panel height and
+    # cropped on the spine side, flattened into ONE RGB image for the whole wrap.
+    # The designer art is CMYK JPEG tiles plus a few RGB/indexed ones over an RGB
+    # fill; KDP's RIP converts those through different paths, so the "black"
+    # behind the mushroom printed a lighter grey than the ground around it.
+    bg = fitz.open()
+    bp = bg.new_page(width=W, height=H)
+    bp.draw_rect(bp.rect, color=None, fill=BG)
     for idx, panel, spine_side_left in ((0, front, True), (1, back, False)):
         src = _art(idx)
         sr = src[0].rect
         need_w = sr.height * panel.width / panel.height
         clip = (fitz.Rect(sr.x1 - need_w, 0, sr.x1, sr.y1) if spine_side_left
                 else fitz.Rect(0, 0, need_w, sr.y1))
-        page.show_pdf_page(panel, src, 0, clip=clip)
+        bp.show_pdf_page(panel, src, 0, clip=clip)
+    pix = bp.get_pixmap(dpi=ART_DPI, colorspace=fitz.csRGB, alpha=False)
+    page.insert_image(page.rect, stream=pix.tobytes("jpeg", jpg_quality=95),
+                      keep_proportion=False)
 
     # ---- front ----
     # Title: as large as the clear band above the mushroom allows, measured
@@ -300,7 +309,7 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
         text(page, fonts, (fx, 372 + i * 24), line, font="medium", size=20, color=SUB_PINK)
     right = front.x1 - BLEED - SAFE
     for i, name in enumerate(("Jeff Emmett", "Jessica Zartler")):
-        text(page, fonts, (right, H - BLEED - SAFE - 56 + i * 27), name, font="display",
+        text(page, fonts, (right, H - BLEED - SAFE - 50 + i * 27), name, font="display",
              size=21, color=TITLE_YELLOW, align="right", word_space=2.2)
     text(page, fonts, (right, H - BLEED - SAFE - 4), "Foreword by Scott Morris",
          font="display", size=11, color=TITLE_YELLOW, align="right", word_space=1.3)
