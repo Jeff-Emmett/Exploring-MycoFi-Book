@@ -36,6 +36,7 @@ SPINE_CLEAR = {"kdp": 0.0625, "lulu": 0.125}
 MIN_SPINE_TYPE = 4.5        # pt of ink; below this the spine stays blank
 SPINE_TRACK = 0.12          # em added after every spine letter (legibility at ~7pt)
 SPINE_WORD = 0.6            # em added to each spine word space
+SPINE_NAME_WORD = 0.1       # em added to a space inside a name (Jeff Emmett)
 TITLE_ART_GAP = 8.0                 # pt between the title's ink and the mushroom art
 TITLE_LINE_GAP = 2.0                # pt between "Exploring" descenders and "MycoFi"
 MYCOFI_DROP = 4.0                   # extra air above "MycoFi" (author's request)
@@ -92,9 +93,16 @@ def spine_inches(platform: str, pages: int, paper: str = "standard-color") -> fl
 BOX_FILLS = ([0.019989, 0.0400085, 0.710938, 0], [0, 0.129883, 0.0100098, 0])
 
 
+def _space_em(s: str, i: int) -> float:
+    """Extra em after the space at ``s[i]``: a full word gap beside "&", a tight one
+    inside a name, so "Jeff Emmett" reads as one name and "&" still separates two."""
+    beside_amp = (i > 0 and s[i - 1] == "&") or (i + 1 < len(s) and s[i + 1] == "&")
+    return SPINE_NAME_WORD if "&" in s and not beside_amp else SPINE_WORD
+
+
 def _spine_len(fonts: Fonts, s: str, font: str, size: float) -> float:
     return (fonts[font].text_length(s, size) + SPINE_TRACK * size * (len(s) - 1)
-            + SPINE_WORD * size * s.count(" "))
+            + sum(_space_em(s, i) * size for i, ch in enumerate(s) if ch == " "))
 
 
 def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, cx: float,
@@ -107,9 +115,9 @@ def _spine_line(page: fitz.Page, fonts: Fonts, s: str, font: str, size: float, c
     f = fonts[font]
     w = fitz.TextWriter(page.rect)
     x = baseline_x
-    for ch in s:
+    for i, ch in enumerate(s):
         w.append((x, y0), ch, font=f, fontsize=size)
-        x += f.text_length(ch, size) + SPINE_TRACK * size + (SPINE_WORD * size if ch == " " else 0)
+        x += f.text_length(ch, size) + SPINE_TRACK * size + (_space_em(s, i) * size if ch == " " else 0)
     w.write_text(page, color=color, morph=(fitz.Point(baseline_x, y0), fitz.Matrix(-90)))
 
 
@@ -301,15 +309,17 @@ def build(platform: str, pages: int, out: Path, fonts: Fonts, paper: str = "stan
     if spine_title is None:
         spine_title = (spine - 2 * clear) >= MIN_SPINE_TYPE and pages > 80
     if spine_title:
-        # Both lines are set in caps (no descenders, so the letters are as tall as
-        # the spine allows) and sized so their ink fills the spine minus ``clear``
-        # on each side; colour, not size, separates title from authors. Both are
-        # letterspaced. The title is centred a third of the way down; the authors
-        # end at the 0.5" safe distance from the foot trim.
-        avail = spine - 2 * clear
+        # The title is set in caps, the authors in mixed case. Type is sized from
+        # the KDP spine (the narrowest) less KDP's clearance, on every platform, so
+        # the spine text is identical on each printer's cover; only the spine's
+        # width, set by each printer's paper, differs. Colour, not size, separates
+        # title from authors. Both are letterspaced. The title is centred a third
+        # of the way down; the authors end at the 0.5" safe distance from the foot.
+        avail = min(spine - 2 * clear,
+                    (spine_inches("kdp", pages, paper) - 2 * SPINE_CLEAR["kdp"]) * PT_PER_IN)
         cx = spine_r.x0 + spine / 2
         end_inset = BLEED + SAFE
-        title, authors = "EXPLORING MYCOFI", "JEFF EMMETT & JESSICA ZARTLER"
+        title, authors = "EXPLORING MYCOFI", "Jeff Emmett & Jessica Zartler"
         lo, hi = _ink(fonts.paths["display"], title)
         t_size = avail / (hi - lo)
         lo, hi = _ink(fonts.paths["display"], authors)

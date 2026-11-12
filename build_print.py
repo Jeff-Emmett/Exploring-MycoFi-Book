@@ -115,8 +115,8 @@ def main() -> int:
     ap.add_argument("--paper", default="standard-color", choices=sorted(cover.KDP_PER_PAGE),
                     help="KDP paper (sets the spine width)")
     ap.add_argument("--spine-clear", type=float, default=None,
-                    help="spine text to spine edge, inches (default: the printer's "
-                         f"recommendation, {cover.SPINE_CLEAR})")
+                    help="spine text to spine edge, inches (default: KDP's, on both covers; "
+                         f"printer recommendations: {cover.SPINE_CLEAR})")
     args = ap.parse_args()
 
     fonts = Fonts()
@@ -132,17 +132,13 @@ def main() -> int:
             pages = built.page_count
         if platform in ("kdp", "lulu"):
             cov = OUT_DIR / f"ExploringMycoFi_cover_{platform}.pdf"
+            # Spine text on both covers. Lulu's own 0.125" clearance leaves no room on
+            # an 86 pp spine, so Lulu uses KDP's tighter 0.0625" unless --spine-clear says.
+            clear = args.spine_clear if args.spine_clear is not None else cover.SPINE_CLEAR["kdp"]
             info = cover.build(platform, pages, cov, fonts, paper=args.paper,
-                               spine_clear=args.spine_clear)
+                               spine_title=True, spine_clear=clear)
             print(f"  {cov.name}: {info['width_in']:.4f}x{info['height_in']:.4f}in, "
-                  f"spine {info['spine_in']:.4f}in, spine title: {info['spine_title']}")
-            if platform == "lulu":
-                # Alternate Lulu cover with spine text at KDP's tighter 0.0625" clearance
-                # (Lulu's own 0.125" leaves no room on an 86 pp spine).
-                alt = OUT_DIR / "ExploringMycoFi_cover_lulu_spine.pdf"
-                cover.build(platform, pages, alt, fonts, paper=args.paper,
-                            spine_title=True, spine_clear=cover.SPINE_CLEAR["kdp"])
-                print(f"  {alt.name}: spine title at {cover.SPINE_CLEAR['kdp']}in clearance")
+                  f"spine {info['spine_in']:.4f}in at {clear}in clearance")
         else:
             add_covers(out, fonts, pages)
     return 0
